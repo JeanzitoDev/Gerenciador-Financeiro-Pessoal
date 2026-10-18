@@ -19,7 +19,7 @@ const authSchema = z.object({
 });
 export async function POST(request: Request) {
   try {
-    checkOrigin(request);
+    const origin = checkOrigin(request);
     if (!isConfigured())
       throw new ApiError(503, "Configure o Supabase para habilitar o acesso.");
     const raw = await readJson(request);
@@ -33,7 +33,6 @@ export async function POST(request: Request) {
       throw new ApiError(422, result.error.issues[0].message);
     const body = result.data;
     const supabase = await createClient();
-    const origin = new URL(request.url).origin;
     if (body.action === "logout") {
       const { error } = await supabase.auth.signOut();
       if (error)

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { validatedRequestOrigin } from "./request-origin";
 import { createClient } from "./supabase/server";
 import { isConfigured } from "./supabase/config";
 export class ApiError extends Error {
@@ -22,9 +23,9 @@ export async function requireUser() {
   return { supabase, user };
 }
 export function checkOrigin(request: Request) {
-  const origin = request.headers.get("origin");
-  if (!origin || origin !== new URL(request.url).origin)
-    throw new ApiError(403, "Origem da solicitação inválida.");
+  const origin = validatedRequestOrigin(request);
+  if (!origin) throw new ApiError(403, "Origem da solicitação inválida.");
+  return origin;
 }
 export async function readJson(request: Request) {
   const text = await request.text();
