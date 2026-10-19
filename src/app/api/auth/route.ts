@@ -11,9 +11,10 @@ import {
 const authSchema = z.object({
   action: z.enum(["login", "signup", "reset", "update", "logout"]),
   email: z.email().max(254).optional(),
+  display_name: z.string().trim().max(80).optional(),
   password: z
     .string()
-    .min(12, "Use pelo menos 12 caracteres.")
+    .min(8, "Use pelo menos 8 caracteres.")
     .max(128)
     .optional(),
 });
@@ -57,6 +58,11 @@ export async function POST(request: Request) {
     }
     if (!body.email) throw new ApiError(422, "Informe seu e-mail.");
     if (body.action === "reset") {
+      if (process.env.NEXT_PUBLIC_AUTH_EMAIL_ENABLED !== "true")
+        throw new ApiError(
+          503,
+          "A recuperação por e-mail ficará disponível em uma próxima versão.",
+        );
       await supabase.auth.resetPasswordForEmail(body.email, {
         redirectTo: `${origin}/auth/callback?next=/nova-senha`,
       });
@@ -68,20 +74,55 @@ export async function POST(request: Request) {
     }
     if (!body.password) throw new ApiError(422, "Informe sua senha.");
     if (body.action === "signup") {
-      const { error } = await supabase.auth.signUp({
+      if (!body.display_name)
+        throw new ApiError(422, "Conte como podemos te chamar.");
+      const { data, error } = await supabase.auth.signUp({
         email: body.email,
         password: body.password,
-        options: { emailRedirectTo: `${origin}/auth/callback` },
+        options: {
+          data: { display_name: body.display_name },
+          emailRedirectTo: `${origin}/auth/callback`,
+        },
       });
-      if (error)
+      if (error) {
+        // Codes only: never log an email, password, token or upstream message containing PII.
+        console.error("Auth signup", {
+          name: error.name,
+          code: error.code,
+          status: error.status,
+        });
+        const message =
+          error.code === "email_address_invalid"
+            ? "Confira o endereço de e-mail informado."
+            : error.code === "email_exists" ||
+                error.code === "user_already_exists"
+              ? "Não foi possível criar a conta. Tente entrar."
+              : error.status === 429
+                ? "Muitas tentativas. Aguarde antes de tentar novamente."
+                : error.status === 0
+                  ? "Não foi possível conectar ao serviço de acesso. Tente novamente."
+                  : "Não foi possível criar a conta. Confira os dados e tente novamente.";
         throw new ApiError(
-          error.status === 429 ? 429 : 400,
-          "Não foi possível cadastrar. Aguarde e confira as configurações de e-mail do projeto.",
+          error.status === 429 ? 429 : error.status === 0 ? 503 : 400,
+          message,
         );
+      }
+      if (data?.session) {
+        const { error: signOutError } = await supabase.auth.signOut({
+          scope: "local",
+        });
+        if (signOutError)
+          throw new ApiError(
+            503,
+            "Conta criada. Recarregue a página para continuar.",
+          );
+      }
       return json({
         ok: true,
-        message:
-          "Confira seu e-mail para confirmar a conta. Depois, entre com sua senha.",
+        requires_confirmation: !data?.session,
+        message: data?.session
+          ? "Conta criada! Entre com seu e-mail e senha."
+          : "Conta criada. A confirmação de e-mail ainda está habilitada no projeto Supabase.",
       });
     }
     const { error } = await supabase.auth.signInWithPassword({

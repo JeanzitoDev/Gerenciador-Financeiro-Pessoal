@@ -4,6 +4,7 @@ import { Calculator, ArrowUpRight, Info } from "lucide-react";
 import { project, type ProjectionPoint } from "@/lib/finance/engine";
 import { parseMoney, formatMoney, percent } from "@/lib/finance/money";
 import FinanceChart from "./charts";
+import MoneyInput from "./money-input";
 export default function Simulator() {
   const [values, setValues] = useState({
     initial: "1000,00",
@@ -49,15 +50,23 @@ export default function Simulator() {
   const field = (key: keyof typeof values, label: string, type = "text") => (
     <label className="form-field">
       <span>{label}</span>
-      <input
-        value={values[key]}
-        onChange={(e) => set(key, e.target.value)}
-        type={type}
-        inputMode={type === "number" ? "numeric" : "decimal"}
-        min={type === "number" ? 1 : undefined}
-        max={type === "number" ? 600 : undefined}
-        required
-      />
+      {key === "initial" || key === "monthly" ? (
+        <MoneyInput
+          value={values[key]}
+          onValueChange={(v) => set(key, v)}
+          required
+        />
+      ) : (
+        <input
+          value={values[key]}
+          onChange={(e) => set(key, e.target.value)}
+          type={type}
+          inputMode={type === "number" ? "numeric" : "decimal"}
+          min={type === "number" ? 1 : undefined}
+          max={type === "number" ? 600 : undefined}
+          required
+        />
+      )}
     </label>
   );
   return (
@@ -106,6 +115,7 @@ export default function Simulator() {
             </div>
           </div>
           <FinanceChart
+            cashFlow={false}
             labels={points.map((p) => String(p.month))}
             primary={points.map((p) => p.total)}
             secondary={points.map((p) => p.principal)}

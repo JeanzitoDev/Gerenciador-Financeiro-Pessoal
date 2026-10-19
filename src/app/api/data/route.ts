@@ -10,6 +10,7 @@ export async function GET() {
       "contributions",
       "investments",
       "recurrences",
+      "loans",
     ] as const;
     const results = await Promise.all(
       tables.map(async (table) => {
@@ -36,10 +37,12 @@ export async function GET() {
     if (error) throw databaseError(error);
     return json({
       ...Object.fromEntries(results),
+      email: user.email ?? "",
+      can_delete_account: !!process.env.SUPABASE_SECRET_KEY,
       profile: profile ?? {
         user_id: user.id,
         display_name: "",
-        theme: "system",
+        theme: "dark",
         accent: "violet",
         background: "gradient",
       },

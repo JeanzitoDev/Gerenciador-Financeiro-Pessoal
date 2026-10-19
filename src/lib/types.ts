@@ -23,6 +23,8 @@ export interface Entry extends Owned {
   category: string;
   gross_cents: number | null;
   deductions_cents: number | null;
+  loan_id?: string | null;
+  installment_number?: number | null;
   recurrence_id: string | null;
   occurrence_date: string | null;
   source: string;
@@ -61,15 +63,41 @@ export interface Recurrence extends Owned {
   start_date: string;
   end_date: string | null;
   active: boolean;
+  auto_post?: boolean;
+  auto_from?: string;
 }
 export interface Profile {
   user_id: string;
   display_name: string;
   theme: "light" | "dark" | "system";
-  accent: "violet" | "emerald" | "blue" | "rose";
-  background: "plain" | "gradient" | "dots";
+  accent:
+    | "violet"
+    | "emerald"
+    | "blue"
+    | "rose"
+    | "amber"
+    | "teal"
+    | "indigo"
+    | "coral";
+  background: "plain" | "gradient" | "dots" | "aurora" | "grid" | "waves";
+}
+export interface Loan extends Owned {
+  name: string;
+  institution: string;
+  kind: "loan" | "financing";
+  principal_cents: number | null;
+  installment_cents: number;
+  total_installments: number;
+  paid_before: number;
+  first_due_date: string;
+  monthly_rate: number | null;
+  cet_annual_rate: number | null;
+  account_id: string | null;
 }
 export interface FinanceData {
+  loans?: Loan[];
+  email?: string;
+  can_delete_account?: boolean;
   accounts: Account[];
   transactions: Entry[];
   goals: Goal[];
@@ -84,4 +112,5 @@ export type Entity =
   | "goals"
   | "contributions"
   | "investments"
-  | "recurrences";
+  | "recurrences"
+  | "loans";

@@ -8,6 +8,7 @@ import {
   ApiError,
 } from "@/lib/api";
 import { schemas, isEntity, uuidSchema } from "@/lib/validation";
+import { consumeBudget } from "@/lib/budget";
 type Context = { params: Promise<{ entity: string }> };
 async function mutate(
   request: Request,
@@ -19,6 +20,7 @@ async function mutate(
     const { entity } = await context.params;
     if (!isEntity(entity)) throw new ApiError(404, "Recurso não encontrado.");
     const { supabase, user } = await requireUser();
+    await consumeBudget(supabase);
     const body = await readJson(request);
     let id: string | undefined;
     if (method !== "POST") {

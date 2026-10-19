@@ -60,39 +60,33 @@ try {
     day: "2-digit",
   }).format(new Date());
   await ok(
-    a
-      .from("accounts")
-      .insert({
-        id: accountA,
-        user_id: userA,
-        name: `${prefix} A`,
-        kind: "checking",
-        opening_cents: 10000,
-        opening_date: date,
-      }),
+    a.from("accounts").insert({
+      id: accountA,
+      user_id: userA,
+      name: `${prefix} A`,
+      kind: "checking",
+      opening_cents: 10000,
+      opening_date: date,
+    }),
   );
   await ok(
-    b
-      .from("accounts")
-      .insert({
-        id: accountB,
-        user_id: userB,
-        name: `${prefix} B`,
-        kind: "checking",
-        opening_cents: 10000,
-        opening_date: date,
-      }),
+    b.from("accounts").insert({
+      id: accountB,
+      user_id: userB,
+      name: `${prefix} B`,
+      kind: "checking",
+      opening_cents: 10000,
+      opening_date: date,
+    }),
   );
   await ok(
-    a
-      .from("goals")
-      .insert({
-        id: goalA,
-        user_id: userA,
-        name: `${prefix} meta`,
-        target_cents: 20000,
-        target_date: date,
-      }),
+    a.from("goals").insert({
+      id: goalA,
+      user_id: userA,
+      name: `${prefix} meta`,
+      target_cents: 20000,
+      target_date: date,
+    }),
   );
   assert.equal(
     (await ok(a.from("accounts").select("id").eq("id", accountB))).length,
@@ -112,27 +106,23 @@ try {
     0,
     "RLS de alteração falhou.",
   );
-  const cross = await a
-    .from("contributions")
-    .insert({
-      id: crossId,
-      user_id: userA,
-      goal_id: goalA,
-      account_id: accountB,
-      amount_cents: 100,
-      date,
-    });
+  const cross = await a.from("contributions").insert({
+    id: crossId,
+    user_id: userA,
+    goal_id: goalA,
+    account_id: accountB,
+    amount_cents: 100,
+    date,
+  });
   assert.ok(cross.error, "FK cruzada deve falhar.");
-  const over = await a
-    .from("contributions")
-    .insert({
-      id: overId,
-      user_id: userA,
-      goal_id: goalA,
-      account_id: accountA,
-      amount_cents: 15000,
-      date,
-    });
+  const over = await a.from("contributions").insert({
+    id: overId,
+    user_id: userA,
+    goal_id: goalA,
+    account_id: accountA,
+    amount_cents: 15000,
+    date,
+  });
   assert.ok(over.error, "Reserva sem saldo deve falhar.");
   const anonymous = await anon.from("accounts").select("id");
   assert.ok(anonymous.error, "Anon não deve possuir SELECT.");

@@ -5,10 +5,12 @@ export default function ConfirmDialog({
   label,
   onClose,
   onConfirm,
+  links = [],
 }: {
   label: string;
   onClose: () => void;
   onConfirm: () => Promise<void>;
+  links?: { label: string; onClick: () => void }[];
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false),
@@ -48,6 +50,24 @@ export default function ConfirmDialog({
           registros podem impedir a exclusão. Uma ocorrência recorrente excluída
           não será gerada novamente.
         </p>
+        {!!links.length && (
+          <div className="dependency-links">
+            <strong>Veja os vínculos antes de excluir:</strong>
+            {links.map((link) => (
+              <button
+                type="button"
+                className="text-button"
+                key={link.label}
+                onClick={() => {
+                  onClose();
+                  link.onClick();
+                }}
+              >
+                {link.label} →
+              </button>
+            ))}
+          </div>
+        )}
         {error && (
           <p role="alert" className="form-error">
             {error}

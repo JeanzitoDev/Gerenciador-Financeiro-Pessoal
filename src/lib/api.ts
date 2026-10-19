@@ -28,8 +28,30 @@ export function checkOrigin(request: Request) {
   return origin;
 }
 export async function readJson(request: Request) {
-  const text = await request.text();
-  if (text.length > 12000) throw new ApiError(413, "Solicitação muito grande.");
+  const advertised = request.headers.get("content-length");
+  if (advertised && Number(advertised) > 12000)
+    throw new ApiError(413, "Solicitação muito grande.");
+  const reader = request.body?.getReader();
+  const decoder = new TextDecoder();
+  let text = "",
+    bytes = 0;
+  if (reader) {
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        bytes += chunk.value.byteLength;
+        if (bytes > 12000) {
+          await reader.cancel();
+          throw new ApiError(413, "Solicitação muito grande.");
+        }
+        text += decoder.decode(chunk.value, { stream: true });
+      }
+      text += decoder.decode();
+    } finally {
+      reader.releaseLock();
+    }
+  }
   let value: unknown;
   try {
     value = JSON.parse(text);

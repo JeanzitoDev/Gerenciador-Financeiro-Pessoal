@@ -1,3 +1,5 @@
+> Modelo original da fase 1. A fase 2 acrescenta `loans`, vínculo de parcela em `transactions`, `auto_post/auto_from` em `recurrences` e orçamento privado de escritas. Consulte `202610180002_phase2.sql` e [FASE-2.md](FASE-2.md).
+
 # Modelo relacional
 
 A migração SQL é a fonte executável do modelo. Todas as tabelas têm dono e RLS. Chaves estrangeiras de recursos incluem `(user_id, id)`; não basta conhecer um UUID para relacionar objetos de outro usuário.

@@ -3,6 +3,7 @@ const { client } = vi.hoisted(() => ({
   client: {
     auth: {
       signUp: vi.fn(),
+      signOut: vi.fn(),
       exchangeCodeForSession: vi.fn(),
       resetPasswordForEmail: vi.fn(),
     },
@@ -18,7 +19,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("NODE_ENV", "development");
   vi.stubEnv("APP_ORIGIN", "");
-  client.auth.signUp.mockResolvedValue({ error: null });
+  vi.stubEnv("NEXT_PUBLIC_AUTH_EMAIL_ENABLED", "true");
+  client.auth.signUp.mockResolvedValue({
+    data: { session: {}, user: { id: "user" } },
+    error: null,
+  });
+  client.auth.signOut.mockResolvedValue({ error: null });
   client.auth.exchangeCodeForSession.mockResolvedValue({ error: null });
   client.auth.resetPasswordForEmail.mockResolvedValue({ error: null });
 });
@@ -31,6 +37,7 @@ describe("fluxo Auth com localhost e bind interno diferente", () => {
         headers: { origin: "http://localhost:3000", host: "localhost:3000" },
         body: JSON.stringify({
           action: "signup",
+          display_name: "Jean",
           email: "teste@example.com",
           password: "senha-de-teste-123",
         }),
@@ -39,7 +46,10 @@ describe("fluxo Auth com localhost e bind interno diferente", () => {
     expect(response.status).toBe(200);
     expect(client.auth.signUp).toHaveBeenCalledWith(
       expect.objectContaining({
-        options: { emailRedirectTo: "http://localhost:3000/auth/callback" },
+        options: {
+          data: { display_name: "Jean" },
+          emailRedirectTo: "http://localhost:3000/auth/callback",
+        },
       }),
     );
   });
@@ -64,7 +74,9 @@ describe("fluxo Auth com localhost e bind interno diferente", () => {
         { headers: { host: "localhost:3000" } },
       ),
     );
-    expect(response.headers.get("location")).toBe("http://localhost:3000/app");
+    expect(response.headers.get("location")).toBe(
+      "http://localhost:3000/entrar?confirmado=1",
+    );
   });
   it("callback de recuperação mantém o destino permitido", async () => {
     const response = await GET(
@@ -84,6 +96,7 @@ describe("fluxo Auth com localhost e bind interno diferente", () => {
         headers: { origin: "https://evil.test", host: "localhost:3000" },
         body: JSON.stringify({
           action: "signup",
+          display_name: "Jean",
           email: "teste@example.com",
           password: "senha-de-teste-123",
         }),
@@ -91,5 +104,38 @@ describe("fluxo Auth com localhost e bind interno diferente", () => {
     );
     expect(response.status).toBe(403);
     expect(client.auth.signUp).not.toHaveBeenCalled();
+  });
+});
+
+describe("cadastro sem confirmação da fase 2", () => {
+  it("aceita oito caracteres e termina a sessão automática para voltar a Entrar", async () => {
+    vi.stubEnv("NEXT_PUBLIC_AUTH_EMAIL_ENABLED", "false");
+    const r = await POST(
+      new Request("http://localhost:3000/api/auth", {
+        method: "POST",
+        headers: { origin: "http://localhost:3000" },
+        body: JSON.stringify({
+          action: "signup",
+          display_name: "Jean",
+          email: "teste@example.com",
+          password: "12345678",
+        }),
+      }),
+    );
+    expect(r.status).toBe(200);
+    expect((await r.json()).requires_confirmation).toBe(false);
+    expect(client.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+  });
+  it("não promete enviar recuperação quando o envio está desativado", async () => {
+    vi.stubEnv("NEXT_PUBLIC_AUTH_EMAIL_ENABLED", "false");
+    const r = await POST(
+      new Request("http://localhost:3000/api/auth", {
+        method: "POST",
+        headers: { origin: "http://localhost:3000" },
+        body: JSON.stringify({ action: "reset", email: "teste@example.com" }),
+      }),
+    );
+    expect(r.status).toBe(503);
+    expect(client.auth.resetPasswordForEmail).not.toHaveBeenCalled();
   });
 });

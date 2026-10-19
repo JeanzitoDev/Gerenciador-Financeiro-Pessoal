@@ -590,7 +590,7 @@ legend {
   background: var(--panel);
   height: 43px;
 }
-.month-control button {
+.month-control > button {
   width: 29px;
   height: 40px;
   display: flex;

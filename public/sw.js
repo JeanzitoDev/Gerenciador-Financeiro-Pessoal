@@ -1,6 +1,6 @@
 /* Online-first. NEVER cache private HTML, API responses, financial payloads or Supabase requests. */
-const CACHE = 'meu-norte-public-v1';
-const PUBLIC_ASSETS = ['/offline.html','/icons/icon-192.png','/icons/icon-512.png','/icons/apple-touch-icon.png','/icons/maskable-512.png'];
+const CACHE = 'meu-norte-public-v2.2.0';
+const PUBLIC_ASSETS = ['/offline.html','/icons/icon-192.png','/icons/icon-512.png','/icons/apple-touch-icon.png','/icons/maskable-512.png','/fonts/geist-variable.ttf'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(PUBLIC_ASSETS)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('meu-norte-')&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',event=>{

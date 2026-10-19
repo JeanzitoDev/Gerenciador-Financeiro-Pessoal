@@ -1,5 +1,6 @@
 import type { Account, Entry } from "../types";
 import { moneyInput } from "./money";
+import { entryStatusLabel } from "./entry-status";
 export function csvCell(value: unknown): string {
   const raw = String(value ?? "");
   const safe = /^[\s]*[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
@@ -19,11 +20,16 @@ export function exportEntries(entries: Entry[], accounts: Account[]): string {
       "Destino",
     ],
     ...entries.map((e) => [
-      e.date,
-      e.kind,
+      e.date.split("-").reverse().join("/"),
+      {
+        income: "Receita",
+        expense: "Despesa",
+        transfer: "Transferência",
+        yield: "Rendimento",
+      }[e.kind],
       e.description,
       moneyInput(e.amount_cents),
-      e.status,
+      entryStatusLabel(e),
       e.category,
       names.get(e.source_account_id ?? "") ?? "",
       names.get(e.target_account_id ?? "") ?? "",

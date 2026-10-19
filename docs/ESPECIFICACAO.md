@@ -1,3 +1,5 @@
+> Documento original da fase 1, preservado como histórico. As decisões atuais da v2.0.0 estão em [FASE-2.md](FASE-2.md) e [SEGURANCA.md](SEGURANCA.md).
+
 # Gerenciador Financeiro Pessoal — especificação antes da implementação
 
 Versão 1 • 18/10/2026 • nome de interface provisório: Meu Norte.

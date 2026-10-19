@@ -9,16 +9,19 @@ export async function GET(request: Request) {
   if (code && isConfigured()) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error)
+    if (!error) {
+      const recovering = url.searchParams.get("next") === "/nova-senha";
+      if (!recovering) await supabase.auth.signOut({ scope: "local" });
       return NextResponse.redirect(
         new URL(
           url.searchParams.get("next") === "/nova-senha"
             ? "/nova-senha"
-            : "/app",
+            : "/entrar?confirmado=1",
           origin,
         ),
         { headers: { "Cache-Control": "private, no-store" } },
       );
+    }
   }
   return NextResponse.redirect(new URL("/entrar?erro=link", origin), {
     headers: { "Cache-Control": "private, no-store" },

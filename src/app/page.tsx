@@ -1,4 +1,6 @@
 import Link from "next/link";
+import BrandMark from "@/components/brand-mark";
+import { APP_VERSION } from "@/lib/version";
 import {
   Compass,
   ArrowRight,
@@ -14,7 +16,7 @@ export default function Home() {
       <nav className="landing-nav">
         <Link href="/" className="brand">
           <span className="brand-symbol">
-            <Compass size={27} />
+            <BrandMark size={36} />
           </span>
           meu norte<span className="brand-dot">.</span>
         </Link>
@@ -128,7 +130,14 @@ export default function Home() {
         ))}
       </section>
       <footer className="landing-footer">
-        Meu Norte · Seu dinheiro, seus caminhos.
+        Meu Norte · v{APP_VERSION} · © {new Date().getFullYear()}{" "}
+        <a
+          href="https://github.com/JeanzitoDev"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          JeanzitoDev
+        </a>
       </footer>
     </main>
   );

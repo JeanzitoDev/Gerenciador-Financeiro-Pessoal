@@ -1,37 +1,18 @@
 import type { NextConfig } from "next";
 import path from "node:path";
-const supabaseOrigin = (() => {
-  try {
-    return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").origin;
-  } catch {
-    return "https://*.supabase.co";
-  }
-})();
-const production = process.env.NODE_ENV === "production";
-const csp = [
-  "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${production ? "" : " 'unsafe-eval'"}`,
-  "style-src 'self' 'unsafe-inline'",
-  `connect-src 'self' ${supabaseOrigin}`,
-  "img-src 'self' data: blob:",
-  "font-src 'self'",
-  "worker-src 'self'",
-  "manifest-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "frame-ancestors 'none'",
-  "form-action 'self'",
-].join("; ");
 const config: NextConfig = {
   turbopack: { root: path.resolve(process.cwd()) },
   poweredByHeader: false,
+  devIndicators: false,
   async headers() {
     return [
       {
         source: "/:path*",
         headers: [
-          { key: "Content-Security-Policy", value: csp },
           { key: "X-Content-Type-Options", value: "nosniff" },
+          ...(process.env.NODE_ENV === "production"
+            ? [{ key: "Strict-Transport-Security", value: "max-age=31536000" }]
+            : []),
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {

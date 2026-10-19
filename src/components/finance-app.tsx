@@ -53,7 +53,8 @@ import type {
 import {
   demoData,
   mutateDemo,
-  generateDemo,
+  syncDemo,
+  payLoanDemo,
   updateDemoProfile,
 } from "@/lib/demo";
 import { today, addMonths, formatDate, monthLabel } from "@/lib/finance/dates";
@@ -80,12 +81,23 @@ import RecordForm, { type FormState } from "./record-form";
 import FinanceChart from "./charts";
 import Simulator from "./simulator";
 import ConfirmDialog from "./confirm-dialog";
+import BrandMark from "./brand-mark";
+import PendingRecurrences from "./pending-recurrences";
+import LoansSection, { type LoanPayment } from "./loans-section";
+import DeleteAccount from "./delete-account";
+import MobileSheet from "./mobile-sheet";
+import { MonthControl } from "./date-control";
+import { APP_VERSION } from "@/lib/version";
+import MoneyInput from "./money-input";
+import SelectControl from "./select-control";
+import { entryStatusLabel, isPaidEarly } from "@/lib/finance/entry-status";
 type Screen =
   | "overview"
   | "transactions"
   | "accounts"
   | "goals"
   | "investments"
+  | "loans"
   | "recurrences"
   | "planning"
   | "reports"
@@ -97,6 +109,7 @@ const nav: { id: Screen; label: string; icon: LucideIcon }[] = [
   { id: "accounts", label: "Minhas contas", icon: Wallet },
   { id: "goals", label: "Metas", icon: Target },
   { id: "investments", label: "Investimentos", icon: ChartNoAxesCombined },
+  { id: "loans", label: "Empréstimos e financiamentos", icon: Landmark },
   { id: "recurrences", label: "Recorrências", icon: CalendarClock },
   { id: "planning", label: "Planejamento", icon: Compass },
   { id: "simulator", label: "Simulador", icon: Calculator },
@@ -109,7 +122,8 @@ const descriptions: Record<Screen, string> = {
   accounts: "Seu dinheiro, em cada lugar.",
   goals: "Dê um destino aos seus planos.",
   investments: "Acompanhe o que já rendeu. Imagine o que pode render.",
-  recurrences: "Menos repetição. Mais organização.",
+  recurrences: "O app lembra. Você só confirma.",
+  loans: "Veja o que já pagou e o que falta.",
   planning: "Escolha o que vem primeiro.",
   simulator: "Explore as possibilidades do seu dinheiro.",
   reports: "Transforme seus movimentos em clareza.",
@@ -198,7 +212,7 @@ function Actions({
 }
 export default function FinanceApp({ demo }: { demo: boolean }) {
   const [data, setData] = useState<FinanceData | null>(() =>
-      demo ? demoData() : null,
+      demo ? syncDemo(demoData()) : null,
     ),
     [screen, setScreen] = useState<Screen>("overview"),
     [month, setMonth] = useState(today().slice(0, 7));
@@ -219,11 +233,32 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
     [status, setStatus] = useState("all");
   const [planBudget, setPlanBudget] = useState("1000,00"),
     [strategy, setStrategy] = useState<PlanningStrategy>("date");
-  const [generateFrom, setGenerateFrom] = useState(`${month}-01`),
-    [generateUntil, setGenerateUntil] = useState(addMonths(`${month}-01`, 1)),
-    [generating, setGenerating] = useState(false);
-  const [preferences, setPreferences] = useState<Profile | null>(null),
+  const [profileMenu, setProfileMenu] = useState(false),
+    [deletingAccount, setDeletingAccount] = useState(false),
+    [accountFilter, setAccountFilter] = useState("");
+  const [preferenceDraft, setPreferenceDraft] = useState<{
+      userId: string;
+      changes: Partial<Omit<Profile, "user_id">>;
+    } | null>(null),
     [savingPrefs, setSavingPrefs] = useState(false);
+  const preferences = data
+    ? {
+        ...data.profile,
+        ...(preferenceDraft?.userId === data.profile.user_id
+          ? preferenceDraft.changes
+          : {}),
+      }
+    : null;
+  function changePreferences(changes: Partial<Omit<Profile, "user_id">>) {
+    if (!data) return;
+    setPreferenceDraft((current) => ({
+      userId: data.profile.user_id,
+      changes: {
+        ...(current?.userId === data.profile.user_id ? current.changes : {}),
+        ...changes,
+      },
+    }));
+  }
   const asOf = today();
   const request = useCallback(async (path: string, options?: RequestInit) => {
     const response = await fetch(path, {
@@ -241,9 +276,16 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
   const load = useCallback(async () => {
     try {
       setLoading(true);
+      let syncError = "";
+      try {
+        await request("/api/recurrences/sync", { method: "POST", body: "{}" });
+      } catch {
+        syncError =
+          "Seus dados foram carregados, mas não foi possível atualizar os agendamentos. Tente atualizar novamente.";
+      }
       const result = await request("/api/data");
       setData(result);
-      setError("");
+      setError(syncError);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Não foi possível carregar.",
@@ -255,6 +297,24 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
   useEffect(() => {
     if (!demo) void load();
   }, [demo, load]);
+  useEffect(() => {
+    if (demo) return;
+    const refresh = () => {
+      if (
+        document.visibilityState === "visible" &&
+        !form &&
+        !remove &&
+        !savingPrefs
+      )
+        void load();
+    };
+    const timer = setInterval(refresh, 60000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [demo, load, form, remove, savingPrefs]);
   useEffect(() => {
     const update = () => setOffline(!navigator.onLine);
     update();
@@ -270,10 +330,8 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
     const timer = setTimeout(() => setToast(""), 6500);
     return () => clearTimeout(timer);
   }, [toast]);
-  useEffect(() => {
-    if (data) setPreferences(data.profile);
-  }, [data?.profile]);
-  const activePrefs = preferences ?? data?.profile;
+  // Financial refreshes must preserve the appearance being previewed locally.
+  const activePrefs = preferences;
   useEffect(() => {
     if (!activePrefs) return;
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -297,7 +355,13 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
   function go(next: Screen) {
     setScreen(next);
     setMenu(false);
-    window.scrollTo({ top: 0, behavior: "instant" });
+    setProfileMenu(false);
+    window.scrollTo({
+      top: 0,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : "smooth",
+    });
   }
   function newRecord(entity: Entity, preset?: Record<string, unknown>) {
     setForm({ entity, preset });
@@ -311,13 +375,34 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
     payload: Record<string, unknown>,
   ) {
     if (demo) {
-      setData(mutateDemo(data!, entity, method, payload));
+      setData(syncDemo(mutateDemo(data!, entity, method, payload)));
     } else {
       await request(`/api/records/${entity}`, {
         method,
         body: JSON.stringify(payload),
       });
+      if (entity === "transactions" && method === "PUT")
+        setData((current) =>
+          current
+            ? {
+                ...current,
+                transactions: current.transactions.map((entry) =>
+                  entry.id === payload.id
+                    ? ({ ...entry, ...payload } as Entry)
+                    : entry,
+                ),
+              }
+            : current,
+        );
       await load();
+    }
+    if (
+      entity === "transactions" &&
+      payload.status === "posted" &&
+      typeof payload.date === "string"
+    ) {
+      setMonth(payload.date.slice(0, 7));
+      if (status === "planned") setStatus("all");
     }
     setToast(
       method === "POST" ? "Pronto! Registro criado." : "Alterações salvas.",
@@ -345,6 +430,9 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
           (e) =>
             e.status !== "cancelled" &&
             e.date.startsWith(month) &&
+            (!accountFilter ||
+              e.source_account_id === accountFilter ||
+              e.target_account_id === accountFilter) &&
             (kind === "all" || e.kind === kind) &&
             (status === "all" || e.status === status) &&
             `${e.description} ${e.category}`
@@ -352,9 +440,12 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
               .includes(search.toLocaleLowerCase("pt-BR")),
         )
         .sort(
-          (a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id),
+          (a, b) =>
+            b.date.localeCompare(a.date) ||
+            (b.created_at ?? "").localeCompare(a.created_at ?? "") ||
+            b.id.localeCompare(a.id),
         ) ?? [],
-    [data, month, kind, status, search],
+    [data, month, kind, status, search, accountFilter],
   );
   if (!data)
     return (
@@ -392,7 +483,12 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
   });
   const monthlyEntries = data.transactions
     .filter((e) => e.date.startsWith(month) && e.status !== "cancelled")
-    .sort((a, b) => b.date.localeCompare(a.date));
+    .sort(
+      (a, b) =>
+        b.date.localeCompare(a.date) ||
+        (b.created_at ?? "").localeCompare(a.created_at ?? "") ||
+        b.id.localeCompare(a.id),
+    );
   const nameOf = (id: string | null) =>
     data.accounts.find((a) => a.id === id)?.name ?? "—";
   const totalCategories = sumCents(categories.map((c) => c.value));
@@ -419,34 +515,8 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
       };
     }
   })();
-  async function generate(e: React.FormEvent) {
-    e.preventDefault();
-    setGenerating(true);
-    try {
-      let count: number;
-      if (demo) {
-        const result = generateDemo(data!, generateFrom, generateUntil);
-        count = result.count;
-        setData(result.data);
-      } else {
-        const result = await request("/api/recurrences/generate", {
-          method: "POST",
-          body: JSON.stringify({ from: generateFrom, until: generateUntil }),
-        });
-        count = result.count;
-        await load();
-      }
-      setToast(
-        `${count} ${count === 1 ? "previsão gerada" : "previsões geradas"}. Confirme os pagamentos nos lançamentos.`,
-      );
-    } catch (err) {
-      setToast(err instanceof Error ? err.message : "Não foi possível gerar.");
-    } finally {
-      setGenerating(false);
-    }
-  }
-  function downloadCSV() {
-    const blob = new Blob([exportEntries(visibleEntries, data!.accounts)], {
+  function downloadCSV(entries: Entry[] = visibleEntries) {
+    const blob = new Blob([exportEntries(entries, data!.accounts)], {
       type: "text/csv;charset=utf-8;",
     });
     const url = URL.createObjectURL(blob),
@@ -456,6 +526,160 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
     a.click();
     URL.revokeObjectURL(url);
   }
+  async function confirmOccurrence(
+    entry: Entry,
+    action: "confirm" | "skip",
+    date?: string,
+    amount?: number,
+  ) {
+    if (demo) {
+      const next = structuredClone(data!);
+      const row = next.transactions.find((e) => e.id === entry.id)!;
+      if (row.status === "planned") {
+        row.status = action === "skip" ? "cancelled" : "posted";
+        if (action === "confirm") row.date = date ?? today();
+        if (amount !== undefined) row.amount_cents = amount;
+      }
+      const { validateDemo } = await import("@/lib/demo");
+      validateDemo(next);
+      setData(next);
+    } else {
+      await request("/api/recurrences/confirm", {
+        method: "POST",
+        body: JSON.stringify({
+          id: entry.id,
+          action,
+          date,
+          amount_cents: amount,
+        }),
+      });
+      await load();
+    }
+    if (action === "confirm") {
+      setMonth((date ?? today()).slice(0, 7));
+      if (status === "planned") setStatus("all");
+    }
+    setToast(
+      action === "skip"
+        ? "Este mês foi pulado. A recorrência continua ativa."
+        : "Pronto! O saldo foi atualizado.",
+    );
+  }
+  async function payLoan(payment: LoanPayment) {
+    if (demo)
+      setData(
+        payLoanDemo(
+          data!,
+          payment.id,
+          payment.number,
+          payment.account_id,
+          payment.date,
+          payment.amount_cents,
+        ),
+      );
+    else {
+      await request("/api/loans/pay", {
+        method: "POST",
+        body: JSON.stringify(payment),
+      });
+      await load();
+    }
+    setToast("Parcela paga e registrada nos Lançamentos.");
+  }
+  async function logout() {
+    try {
+      await request("/api/auth", {
+        method: "POST",
+        body: JSON.stringify({ action: "logout" }),
+      });
+      window.location.assign("/entrar");
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : "Não foi possível sair.");
+    }
+  }
+  const pending = data.transactions
+    .filter((e) => e.recurrence_id && e.status === "planned" && e.date <= asOf)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const dependencies = remove
+    ? (() => {
+        const links: { label: string; onClick: () => void }[] = [];
+        const id = remove.id;
+        if (remove.entity === "accounts") {
+          if (
+            data.transactions.some(
+              (e) => e.source_account_id === id || e.target_account_id === id,
+            )
+          )
+            links.push({
+              label: "Lançamentos desta conta",
+              onClick: () => {
+                setAccountFilter(id);
+                setKind("all");
+                setStatus("all");
+                setSearch("");
+                setMonth(
+                  data.transactions
+                    .filter(
+                      (e) =>
+                        e.source_account_id === id ||
+                        e.target_account_id === id,
+                    )
+                    .sort((a, b) => b.date.localeCompare(a.date))[0]
+                    .date.slice(0, 7),
+                );
+                go("transactions");
+              },
+            });
+          if (data.contributions.some((c) => c.account_id === id))
+            links.push({
+              label: "Aportes vinculados às metas",
+              onClick: () => go("goals"),
+            });
+          if (data.investments.some((i) => i.account_id === id))
+            links.push({
+              label: "Investimento desta conta",
+              onClick: () => go("investments"),
+            });
+          if (
+            data.recurrences.some(
+              (r) => r.source_account_id === id || r.target_account_id === id,
+            )
+          )
+            links.push({
+              label: "Recorrências desta conta",
+              onClick: () => go("recurrences"),
+            });
+          if (data.loans?.some((l) => l.account_id === id))
+            links.push({
+              label: "Contratos vinculados à conta",
+              onClick: () => go("loans"),
+            });
+        }
+        if (
+          remove.entity === "loans" &&
+          data.transactions.some((e) => e.loan_id === id)
+        )
+          links.push({
+            label: "Pagamentos do contrato nos Lançamentos",
+            onClick: () => {
+              setSearch(data.loans?.find((l) => l.id === id)?.name ?? "");
+              setKind("expense");
+              setAccountFilter("");
+              setStatus("all");
+              go("transactions");
+            },
+          });
+        if (
+          remove.entity === "goals" &&
+          data.contributions.some((c) => c.goal_id === id)
+        )
+          links.push({
+            label: "Aportes desta meta",
+            onClick: () => go("goals"),
+          });
+        return links;
+      })()
+    : [];
   function entryList(entries: Entry[], compact = false) {
     return entries.length ? (
       <div className="entry-list">
@@ -508,9 +732,21 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     entry.status === "planned" ? "planned-text" : "muted"
                   }
                 >
-                  {entry.status === "planned" ? "Previsto · " : ""}
+                  <span
+                    className={
+                      entry.status === "posted" ? "entry-confirmed" : undefined
+                    }
+                  >
+                    {entryStatusLabel(entry)}
+                  </span>
+                  {" · "}
                   {formatDate(entry.date).slice(0, 5)}
                 </span>
+                {isPaidEarly(entry) && (
+                  <small className="entry-due">
+                    Vencia em {formatDate(entry.occurrence_date!)}
+                  </small>
+                )}
               </div>
               {!compact && (
                 <Actions
@@ -592,12 +828,17 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
         Ir para o conteúdo
       </a>
       <aside className="sidebar">
-        <Link href="/" className="brand">
+        <button
+          type="button"
+          onClick={() => go("overview")}
+          className="brand brand-home"
+          aria-label="Meu Norte: visão geral"
+        >
           <span className="brand-symbol">
-            <Compass size={25} />
+            <BrandMark size={36} />
           </span>
           meu norte<span className="brand-dot">.</span>
-        </Link>
+        </button>
         <p className="sidebar-caption">UM PASSO DE CADA VEZ</p>
         <nav aria-label="Navegação principal">
           {nav.map(({ id, label, icon: Icon }) => (
@@ -613,30 +854,8 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
             </button>
           ))}
         </nav>
-        <div className="sidebar-bottom">
-          <div className="sidebar-message">
-            <span className="square-icon">
-              <Sparkles size={18} />
-            </span>
-            <strong>
-              Planos pequenos.
-              <br />
-              Conquistas grandes.
-            </strong>
-            <p>Seu próximo passo começa aqui.</p>
-          </div>
-          <button className="profile-button" onClick={() => go("settings")}>
-            <span className="avatar">
-              {(data.profile.display_name || "V").slice(0, 1).toUpperCase()}
-            </span>
-            <span>
-              <strong>{data.profile.display_name || "Seu espaço"}</strong>
-              <small>
-                {demo ? "Conta demonstrativa" : "Finanças pessoais"}
-              </small>
-            </span>
-            <SlidersHorizontal size={16} />
-          </button>
+        <div className="sidebar-version">
+          Meu Norte <span>v{APP_VERSION}</span>
         </div>
       </aside>
       <div className="main-shell">
@@ -663,15 +882,15 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
         )}
         <header className="app-header">
           <div className="mobile-brand">
-            <Compass size={22} />
+            <BrandMark size={29} />
             <strong>meu norte.</strong>
           </div>
-          <div className="breadcrumb">
-            <span>Meu espaço</span>
-            <ChevronRight size={14} />
-            <strong>{nav.find((n) => n.id === screen)?.label}</strong>
-          </div>
-          <div className="header-actions">
+          <div
+            className="header-actions"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setProfileMenu(false);
+            }}
+          >
             <button
               className="icon-button"
               aria-label={hidden ? "Mostrar valores" : "Ocultar valores"}
@@ -682,14 +901,45 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
             <span className="header-divider" />
             <button
               className="header-avatar avatar"
-              aria-label="Abrir preferências"
-              onClick={() => go("settings")}
+              aria-label="Abrir minha conta"
+              aria-expanded={profileMenu}
+              onClick={() => setProfileMenu(!profileMenu)}
             >
               {(data.profile.display_name || "V").slice(0, 1).toUpperCase()}
             </button>
+            {profileMenu && (
+              <>
+                <button
+                  className="profile-dismiss"
+                  aria-label="Fechar menu da conta"
+                  onClick={() => setProfileMenu(false)}
+                />
+                <div className="profile-popover" aria-label="Minha conta">
+                  <strong>{data.profile.display_name || "Minha conta"}</strong>
+                  <small>{data.email || "Demonstração"}</small>
+                  <button
+                    className="text-button"
+                    onClick={() => go("settings")}
+                  >
+                    Perfil e preferências
+                  </button>
+                  {!demo && (
+                    <>
+                      <Link href="/nova-senha">Alterar senha</Link>
+                      <button
+                        className="text-button"
+                        onClick={() => void logout()}
+                      >
+                        Sair da conta
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </header>
-        <main id="main-content" className="app-main" tabIndex={-1}>
+        <main key={screen} id="main-content" className="app-main" tabIndex={-1}>
           <div className="page-heading">
             <div>
               <p className="eyebrow">
@@ -699,42 +949,16 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
               </p>
               <h1>
                 {screen === "overview"
-                  ? "Seu dinheiro, com direção."
+                  ? data.profile.display_name
+                    ? `Olá, ${data.profile.display_name.split(" ")[0]}!`
+                    : "Seu dinheiro, com direção."
                   : nav.find((n) => n.id === screen)?.label}
               </h1>
               <p>{descriptions[screen]}</p>
             </div>
             <div className="page-heading-actions">
               {["overview", "transactions", "reports"].includes(screen) && (
-                <div className="month-control">
-                  <button
-                    aria-label="Mês anterior"
-                    onClick={() =>
-                      setMonth(addMonths(`${month}-01`, -1).slice(0, 7))
-                    }
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <input
-                    aria-label="Competência"
-                    type="month"
-                    value={month}
-                    min="2000-01"
-                    max="2100-12"
-                    onChange={(e) => {
-                      if (/^\d{4}-\d{2}$/.test(e.target.value))
-                        setMonth(e.target.value);
-                    }}
-                  />
-                  <button
-                    aria-label="Próximo mês"
-                    onClick={() =>
-                      setMonth(addMonths(`${month}-01`, 1).slice(0, 7))
-                    }
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
+                <MonthControl value={month} onChange={setMonth} />
               )}
               {screen === "overview" && (
                 <button
@@ -761,13 +985,14 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                 <section className="balance-hero">
                   <div className="hero-top">
                     <span className="hero-label">
-                      <Wallet size={18} /> Patrimônio livre para seus planos
+                      <Wallet size={18} /> Dinheiro livre para seus planos
                     </span>
                     <span className="hero-chip">Saldo atual</span>
                   </div>
                   <strong className="hero-value">{value(stats.free)}</strong>
                   <p>
-                    Patrimônio em dinheiro e aplicações, descontando reservas.
+                    Seu saldo em contas e aplicações, descontando o reservado
+                    para metas.
                   </p>
                   <div className="hero-footer">
                     <span>
@@ -837,6 +1062,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     </button>
                   </div>
                   <FinanceChart
+                    hideValues={hidden}
                     labels={periods.map((p) => p.label)}
                     primary={periods.map((p) => p.income)}
                     secondary={periods.map((p) => p.expense)}
@@ -963,6 +1189,22 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   Novo lançamento
                 </button>
               </div>
+              <PendingRecurrences
+                entries={pending}
+                onAction={confirmOccurrence}
+                hidden={hidden}
+              />
+              {accountFilter && (
+                <div className="info-box">
+                  Mostrando movimentos de {nameOf(accountFilter)}.
+                  <button
+                    className="text-button"
+                    onClick={() => setAccountFilter("")}
+                  >
+                    Mostrar todas as contas
+                  </button>
+                </div>
+              )}
               <section className="panel">
                 <div className="list-filters">
                   <label className="search-input">
@@ -974,18 +1216,23 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                       onChange={(e) => setSearch(e.target.value)}
                     />
                   </label>
-                  <label className="filter-select">
-                    <span className="sr-only">Filtrar situação</span>
-                    <select
+                  <div className="filter-select">
+                    <SelectControl
+                      label="Filtrar situação"
+                      allowEmpty={false}
                       value={status}
-                      onChange={(e) => setStatus(e.target.value)}
-                    >
-                      <option value="all">Todas as situações</option>
-                      <option value="posted">Realizados</option>
-                      <option value="planned">Previstos</option>
-                    </select>
-                  </label>
-                  <button className="button secondary" onClick={downloadCSV}>
+                      onChange={setStatus}
+                      options={[
+                        ["all", "Todas as situações"],
+                        ["posted", "Realizados"],
+                        ["planned", "A pagar e a receber"],
+                      ]}
+                    />
+                  </div>
+                  <button
+                    className="button secondary"
+                    onClick={() => downloadCSV()}
+                  >
                     <Download size={16} />
                     CSV
                   </button>
@@ -1002,7 +1249,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
             <>
               <div className="toolbar">
                 <p className="muted">
-                  Saldo derivado dos movimentos realizados até{" "}
+                  Saldo atualizado com os movimentos confirmados até{" "}
                   {formatDate(asOf)}.
                 </p>
                 <button
@@ -1110,7 +1357,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   <div>
                     <h2>Seus aportes</h2>
                     <p>
-                      Reservas de dinheiro existente, sem duplicar seu
+                      Dinheiro separado para suas metas, dentro do seu
                       patrimônio.
                     </p>
                   </div>
@@ -1238,11 +1485,11 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                             </strong>
                           </div>
                           <div>
-                            <span>Retorno nominal¹</span>
+                            <span>Rendimento antes da inflação¹</span>
                             <strong>{percent(result.nominal)}</strong>
                           </div>
                           <div>
-                            <span>Retorno real²</span>
+                            <span>Rendimento após a inflação²</span>
                             <strong>{percent(result.real)}</strong>
                           </div>
                         </div>
@@ -1252,7 +1499,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                             <strong>{percent(i.annual_rate)} a.a.</strong>
                           </span>
                           <span>
-                            Inflação assumida{" "}
+                            Inflação usada na simulação{" "}
                             <strong>{percent(i.inflation_rate)} a.a.</strong>
                           </span>
                         </div>
@@ -1276,9 +1523,10 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                           )}
                         </div>
                         <p className="small-note">
-                          Desde {formatDate(account.opening_date)} · ¹ Modified
-                          Dietz. ² Descontada a inflação assumida proporcional
-                          ao período. Sem cotações ou impostos automáticos.
+                          Desde {formatDate(account.opening_date)}. ¹ Estimativa
+                          que considera aportes e resgates. ² Desconta a
+                          inflação escolhida pelo período. Não inclui impostos
+                          ou cotações automáticas.
                         </p>
                         <div className="button-row">
                           <button
@@ -1316,7 +1564,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   <Empty
                     icon={TrendingUp}
                     title="Acompanhe seu dinheiro crescendo"
-                    text="Cadastre uma conta de investimento e configure suas premissas."
+                    text="Cadastre uma conta de investimento e configure suas hipóteses."
                     action={() => newRecord("accounts", { kind: "investment" })}
                     label="Criar conta de investimento"
                   />
@@ -1340,11 +1588,22 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
               </section>
             </>
           )}
+          {screen === "loans" && (
+            <LoansSection
+              data={data}
+              hidden={hidden}
+              onNew={() => newRecord("loans")}
+              onEdit={(l) => edit("loans", l)}
+              onDelete={(l) => askDelete("loans", l, l.name)}
+              onPay={payLoan}
+            />
+          )}
           {screen === "recurrences" && (
             <>
               <div className="toolbar">
                 <p className="muted">
-                  Planeje o que se repete. Confirme quando acontecer.
+                  Cadastre uma vez. As próximas datas aparecem sozinhas nos
+                  Lançamentos.
                 </p>
                 <button
                   className="button primary"
@@ -1354,95 +1613,92 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   Nova recorrência
                 </button>
               </div>
-              <section className="panel">
-                <div className="section-head">
-                  <div>
-                    <h2>Gerar previsões</h2>
-                    <p>Ação idempotente: repetir não duplica lançamentos.</p>
-                  </div>
-                  <CalendarClock size={22} />
-                </div>
-                <form className="generate-form" onSubmit={generate}>
-                  <label className="form-field">
-                    <span>De</span>
-                    <input
-                      type="date"
-                      value={generateFrom}
-                      onChange={(e) => setGenerateFrom(e.target.value)}
-                      required
-                    />
-                  </label>
-                  <label className="form-field">
-                    <span>Até (máximo 12 meses)</span>
-                    <input
-                      type="date"
-                      value={generateUntil}
-                      onChange={(e) => setGenerateUntil(e.target.value)}
-                      required
-                    />
-                  </label>
+              <section className="panel recurrence-explainer">
+                <CalendarClock size={23} />
+                <div>
+                  <h2>Seu mês, sem repetir trabalho</h2>
+                  <p>
+                    Por padrão, você confirma com “Recebi” ou “Paguei”. Use
+                    “Pular” para férias ou mudanças naquele mês. O registro
+                    automático é opcional e começa na data em que você o ativa.
+                  </p>
                   <button
-                    className="button primary"
-                    disabled={
-                      generating || !data.recurrences.some((r) => r.active)
-                    }
-                    type="submit"
+                    className="text-button"
+                    onClick={() => go("transactions")}
                   >
-                    <RefreshCw size={16} />
-                    {generating ? "Gerando…" : "Gerar previsões"}
+                    Ir para confirmar{" "}
+                    {pending.length ? "(" + pending.length + ")" : ""}
+                    <ArrowRight size={16} />
                   </button>
-                </form>
-                <p className="small-note">
-                  Mensal no dia 31 usa o último dia dos meses curtos. Alterações
-                  em regras valem para novas ocorrências; as já geradas são
-                  editadas nos lançamentos.
-                </p>
+                </div>
               </section>
-              <section className="panel">
-                {data.recurrences.length ? (
-                  <div className="entry-list">
-                    {data.recurrences.map((r) => (
-                      <div className="entry-row" key={r.id}>
-                        <span className="entry-icon transfer">
-                          <CalendarClock size={20} />
-                        </span>
-                        <div className="entry-description">
-                          <strong>
-                            {r.description}
-                            <span
-                              className={`badge ${r.active ? "success" : ""}`}
-                            >
-                              {r.active ? "Ativa" : "Pausada"}
-                            </span>
-                          </strong>
-                          <span>
-                            {frequencyNames[r.frequency]} · desde{" "}
-                            {formatDate(r.start_date)} · {entryNames[r.kind]}
-                          </span>
-                        </div>
-                        <strong className="entry-right">
-                          {value(r.amount_cents)}
-                        </strong>
-                        <Actions
-                          label={r.description}
-                          onEdit={() => edit("recurrences", r)}
-                          onDelete={() =>
-                            askDelete("recurrences", r, r.description)
+              <div className="stack">
+                {data.recurrences.map((r) => (
+                  <article className="panel recurrence-card" key={r.id}>
+                    <span className="square-icon">
+                      <CalendarClock size={20} />
+                    </span>
+                    <div className="recurrence-info">
+                      <h3>{r.description}</h3>
+                      <p>
+                        {frequencyNames[r.frequency]} · desde{" "}
+                        {formatDate(r.start_date)} · {entryNames[r.kind]} ·{" "}
+                        {nameOf(r.source_account_id || r.target_account_id)}
+                      </p>
+                      <small>
+                        {r.auto_post
+                          ? "Registro automático a partir de " +
+                            formatDate(r.auto_from ?? asOf)
+                          : "Você confirma quando acontecer"}
+                      </small>
+                    </div>
+                    <strong>{value(r.amount_cents)}</strong>
+                    <div className="row-actions">
+                      <button
+                        role="switch"
+                        aria-checked={r.active}
+                        aria-label={`Ativar ou pausar ${r.description}`}
+                        className={`toggle-switch ${r.active ? "on" : ""}`}
+                        onClick={async () => {
+                          try {
+                            await save("recurrences", "PUT", {
+                              ...r,
+                              active: !r.active,
+                            });
+                          } catch (e) {
+                            setToast(
+                              e instanceof Error
+                                ? e.message
+                                : "Não foi possível alterar.",
+                            );
                           }
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
+                        }}
+                      >
+                        <span />
+                        <small>{r.active ? "Ativa" : "Pausada"}</small>
+                      </button>
+                      <Actions
+                        label={r.description}
+                        onEdit={() => edit("recurrences", r)}
+                        onDelete={() =>
+                          askDelete("recurrences", r, r.description)
+                        }
+                      />
+                    </div>
+                  </article>
+                ))}
+              </div>
+              {!data.recurrences.length && (
+                <section className="panel">
                   <Empty
                     icon={CalendarClock}
-                    title="Sua rotina, organizada"
-                    text="Crie regras para salário, aluguel e outras contas recorrentes."
+                    title="O que se repete no seu mês?"
+                    text="Salário, aluguel, internet. Cadastre uma vez e confirme com um toque."
                     action={() => newRecord("recurrences")}
                     label="Criar recorrência"
                   />
-                )}
-              </section>
+                </section>
+              )}
             </>
           )}
           {screen === "planning" && (
@@ -1451,40 +1707,40 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                 <div className="section-head">
                   <div>
                     <h2>Um plano possível para este mês</h2>
-                    <p>Defina uma verba e escolha a ordem das suas metas.</p>
+                    <p>Diga quanto pode separar e escolha suas prioridades.</p>
                   </div>
                   <Compass size={24} />
                 </div>
                 <div className="planning-controls">
                   <label className="form-field">
-                    <span>Orçamento mensal para metas (R$)</span>
-                    <input
-                      inputMode="decimal"
+                    <span>Quanto posso separar por mês? (R$)</span>
+                    <MoneyInput
                       value={planBudget}
-                      onChange={(e) => setPlanBudget(e.target.value)}
+                      onValueChange={setPlanBudget}
                     />
                   </label>
-                  <label className="form-field">
+                  <div className="form-field">
                     <span>Priorizar por</span>
-                    <select
+                    <SelectControl
+                      label="Priorizar por"
+                      allowEmpty={false}
                       value={strategy}
-                      onChange={(e) =>
-                        setStrategy(e.target.value as PlanningStrategy)
-                      }
-                    >
-                      <option value="date">Data alvo mais próxima</option>
-                      <option value="term">Menor prazo restante</option>
-                      <option value="budget">Prioridade e orçamento</option>
-                    </select>
-                  </label>
+                      onChange={(v) => setStrategy(v as PlanningStrategy)}
+                      options={[
+                        ["date", "Meta com a data mais próxima"],
+                        ["term", "Meta com menos tempo restante"],
+                        ["budget", "Minha prioridade e limite mensal"],
+                      ]}
+                    />
+                  </div>
                 </div>
                 <p className="info-box">
                   <Info size={18} />
                   <span>
-                    Esta é uma sugestão para o orçamento informado. As reservas
-                    reais exigem saldo em uma conta. O mês atual conta como uma
-                    parcela; data e prazo produzem a mesma ordem quando têm a
-                    mesma data-base.
+                    Essa sugestão usa o valor que você informou. Para separar o
+                    dinheiro de verdade, registre um aporte com saldo
+                    disponível. Contamos este mês como a primeira parcela do seu
+                    plano.
                   </span>
                 </p>
                 {planning.error && (
@@ -1501,9 +1757,9 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                             <th>Meta</th>
                             <th>Prazo</th>
                             <th>Falta</th>
-                            <th>Necessário / mês</th>
+                            <th>Precisa por mês</th>
                             <th>Sugestão</th>
-                            <th>Déficit / mês</th>
+                            <th>Falta por mês</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1531,11 +1787,11 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     </div>
                     <div className="planning-totals">
                       <span>
-                        Verba não distribuída
+                        Sobra do orçamento
                         <strong>{value(planning.data.remaining)}</strong>
                       </span>
                       <span>
-                        Déficit mensal total
+                        Quanto ainda falta por mês
                         <strong
                           className={
                             planning.data.shortfall ? "negative" : "positive"
@@ -1608,6 +1864,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     </div>
                   </div>
                   <FinanceChart
+                    hideValues={hidden}
                     labels={periods.map((p) => p.label)}
                     primary={periods.map((p) => p.income)}
                     secondary={periods.map((p) => p.expense)}
@@ -1637,7 +1894,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     ))}
                     {!categories.length && (
                       <p className="empty-inline">
-                        Nenhuma despesa realizada nesta competência.
+                        Nenhuma despesa realizada neste mês.
                       </p>
                     )}
                   </div>
@@ -1649,7 +1906,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   <table>
                     <thead>
                       <tr>
-                        <th>Competência</th>
+                        <th>Mês</th>
                         <th>Receitas</th>
                         <th>Despesas</th>
                         <th>Resultado</th>
@@ -1678,15 +1935,10 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                 </p>
                 <button
                   className="button secondary"
-                  onClick={() => {
-                    setKind("all");
-                    setStatus("all");
-                    setSearch("");
-                    go("transactions");
-                  }}
+                  onClick={() => downloadCSV(monthlyEntries)}
                 >
                   <Download size={16} />
-                  Abrir lançamentos para exportar
+                  Baixar lançamentos de {monthLabel(month)} (CSV)
                 </button>
               </section>
             </>
@@ -1713,8 +1965,26 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                           method: "PUT",
                           body: JSON.stringify(preferences),
                         });
+                        setData((current) =>
+                          current
+                            ? { ...current, profile: preferences }
+                            : current,
+                        );
                         await load();
                       }
+                      setPreferenceDraft((current) =>
+                        current?.userId === preferences.user_id
+                          ? {
+                              ...current,
+                              changes: Object.fromEntries(
+                                Object.entries(current.changes).filter(
+                                  ([key, value]) =>
+                                    value !== preferences[key as keyof Profile],
+                                ),
+                              ),
+                            }
+                          : current,
+                      );
                       setToast("Preferências salvas.");
                     } catch (err) {
                       setToast(
@@ -1732,10 +2002,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     <input
                       value={preferences.display_name}
                       onChange={(e) =>
-                        setPreferences({
-                          ...preferences,
-                          display_name: e.target.value,
-                        })
+                        changePreferences({ display_name: e.target.value })
                       }
                       maxLength={80}
                     />
@@ -1759,9 +2026,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                             name="theme"
                             value={id}
                             checked={preferences.theme === id}
-                            onChange={() =>
-                              setPreferences({ ...preferences, theme: id })
-                            }
+                            onChange={() => changePreferences({ theme: id })}
                           />
                           <Icon size={22} />
                           <span>{label}</span>
@@ -1769,51 +2034,58 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                       ))}
                     </div>
                   </fieldset>
-                  <fieldset>
-                    <legend>Sua cor</legend>
-                    <div className="color-options">
-                      {(
-                        [
-                          { id: "violet", label: "Violeta" },
-                          { id: "emerald", label: "Esmeralda" },
-                          { id: "blue", label: "Azul" },
-                          { id: "rose", label: "Rosa" },
-                        ] as const
-                      ).map(({ id, label }) => (
-                        <label key={id} className={`color-option ${id}`}>
-                          <input
-                            type="radio"
-                            name="accent"
-                            aria-label={label}
-                            checked={preferences.accent === id}
-                            onChange={() =>
-                              setPreferences({ ...preferences, accent: id })
-                            }
-                          />
-                          <span>
-                            {preferences.accent === id && <Check size={17} />}
-                          </span>
-                          <small>{label}</small>
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
-                  <label className="form-field">
+                  <div className="form-field">
+                    <span>Sua cor</span>
+                    <SelectControl
+                      label="Sua cor"
+                      value={preferences.accent}
+                      allowEmpty={false}
+                      onChange={(v) =>
+                        changePreferences({ accent: v as Profile["accent"] })
+                      }
+                      options={[
+                        ["violet", "Violeta"],
+                        ["emerald", "Esmeralda"],
+                        ["blue", "Azul"],
+                        ["rose", "Rosa"],
+                        ["amber", "Âmbar"],
+                        ["teal", "Turquesa"],
+                        ["indigo", "Índigo"],
+                        ["coral", "Coral"],
+                      ]}
+                      swatches={{
+                        violet: "#7160d8",
+                        emerald: "#258572",
+                        blue: "#3874d4",
+                        rose: "#ba527d",
+                        amber: "#a36a17",
+                        teal: "#0e8b99",
+                        indigo: "#5962c8",
+                        coral: "#c45f43",
+                      }}
+                    />
+                  </div>
+                  <div className="form-field">
                     <span>Fundo do seu espaço</span>
-                    <select
+                    <SelectControl
+                      label="Fundo do seu espaço"
+                      allowEmpty={false}
                       value={preferences.background}
-                      onChange={(e) =>
-                        setPreferences({
-                          ...preferences,
-                          background: e.target.value as Profile["background"],
+                      onChange={(v) =>
+                        changePreferences({
+                          background: v as Profile["background"],
                         })
                       }
-                    >
-                      <option value="plain">Liso</option>
-                      <option value="gradient">Gradiente suave</option>
-                      <option value="dots">Pontos discretos</option>
-                    </select>
-                  </label>
+                      options={[
+                        ["plain", "Liso"],
+                        ["gradient", "Gradiente suave"],
+                        ["dots", "Pontos discretos"],
+                        ["aurora", "Aurora"],
+                        ["grid", "Linhas sutis"],
+                        ["waves", "Ondas suaves"],
+                      ]}
+                    />
+                  </div>
                   <button
                     className="button primary"
                     disabled={savingPrefs}
@@ -1856,7 +2128,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   <p className="muted">
                     {demo
                       ? "Você está explorando uma demonstração com dados fictícios."
-                      : "Seus dados ficam vinculados à sua conta."}
+                      : `${data.profile.display_name || "Sua conta"} · ${data.email || ""}`}
                   </p>
                   {demo ? (
                     <Link href="/entrar" className="button primary wide">
@@ -1892,6 +2164,20 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                         <LogOut size={16} />
                         Sair da conta
                       </button>
+                      <hr />
+                      <button
+                        className="button destructive wide"
+                        onClick={() => setDeletingAccount(true)}
+                        disabled={!data.can_delete_account}
+                      >
+                        Apagar minha conta e meus dados
+                      </button>
+                      {!data.can_delete_account && (
+                        <p className="small-note">
+                          A exclusão da conta ainda não está disponível neste
+                          ambiente.
+                        </p>
+                      )}
                     </>
                   )}
                 </section>
@@ -1900,12 +2186,33 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
           )}
           <footer className="app-footer">
             <span>
-              <Compass size={14} /> Meu Norte · Seu dinheiro, seus caminhos.
+              <BrandMark size={20} /> Meu Norte · v{APP_VERSION}
             </span>
-            <span>BRL · Valores realizados até {formatDate(asOf)}</span>
+            <span>
+              © {new Date().getFullYear()}{" "}
+              <a
+                href="https://github.com/JeanzitoDev"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                JeanzitoDev
+              </a>
+            </span>
           </footer>
         </main>
       </div>
+      {deletingAccount && (
+        <DeleteAccount
+          onClose={() => setDeletingAccount(false)}
+          onDelete={async (password, confirmation) => {
+            await request("/api/account", {
+              method: "DELETE",
+              body: JSON.stringify({ password, confirmation }),
+            });
+            window.location.assign("/entrar");
+          }}
+        />
+      )}
       <nav className="bottom-nav" aria-label="Navegação mobile">
         {nav
           .filter((n) => ["overview", "transactions", "goals"].includes(n.id))
@@ -1930,32 +2237,21 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
         </button>
       </nav>
       {menu && (
-        <div className="mobile-menu-backdrop" onClick={() => setMenu(false)}>
-          <div className="mobile-menu" onClick={(e) => e.stopPropagation()}>
-            <div className="section-head">
-              <h2>Seu espaço</h2>
+        <MobileSheet onClose={() => setMenu(false)}>
+          <nav aria-label="Todas as páginas">
+            {nav.map(({ id, label, icon: Icon }) => (
               <button
-                className="icon-button"
-                onClick={() => setMenu(false)}
-                aria-label="Fechar menu"
+                key={id}
+                className={`nav-item ${screen === id ? "active" : ""}`}
+                onClick={() => go(id)}
+                aria-current={screen === id ? "page" : undefined}
               >
-                <X size={21} />
+                <Icon size={19} />
+                {label}
               </button>
-            </div>
-            <nav>
-              {nav.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  className={`nav-item ${screen === id ? "active" : ""}`}
-                  onClick={() => go(id)}
-                >
-                  <Icon size={20} />
-                  {label}
-                </button>
-              ))}
-            </nav>
-          </div>
-        </div>
+            ))}
+          </nav>
+        </MobileSheet>
       )}
       {form && (
         <RecordForm
@@ -1971,6 +2267,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
           label={remove.label}
           onClose={() => setRemove(null)}
           onConfirm={deleteRecord}
+          links={dependencies}
         />
       )}
       {toast && (

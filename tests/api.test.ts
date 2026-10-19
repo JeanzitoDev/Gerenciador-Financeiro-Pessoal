@@ -24,6 +24,7 @@ function request(
 const context = (entity: string) => ({ params: Promise.resolve({ entity }) });
 beforeEach(() => {
   vi.clearAllMocks();
+  client.rpc.mockResolvedValue({ data: true, error: null });
   client.auth.getUser.mockResolvedValue({
     data: { user: { id: uid } },
     error: null,

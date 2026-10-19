@@ -1,55 +1,38 @@
-# Evidências de validação — 18/10/2026
+# Validação · Meu Norte 2.2.0
 
-## Resultado automatizado final
+Base desta revisão: Meu Norte 2.1.1, commit `e347196`.
 
-`npm run check` concluiu: **57 testes em 7 arquivos**, geração de tipos, TypeScript estrito e build Next.js de produção aprovados. `npm audit --omit=dev --audit-level=high`: **0 vulnerabilidades conhecidas nas dependências de produção** no momento da execução. Não é uma auditoria de segurança independente.
+## Resultado local
 
-| Camada               | Testes | Evidência                                                                                                                                                                                                                                                                                                          |
-| -------------------- | -----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Domínio financeiro   |     20 | Parser BR, valores inválidos, somas, limite seguro, formatação exata de centavos grandes, datas/bissexto, recorrências ancoradas, caixa/benefícios, metas/tetos, juros equivalentes, inflação, Modified Dietz e CSV seguro                                                                                         |
-| PostgreSQL           |     13 | Migração executada em PGlite; papéis authenticated/anon; duas identidades; leitura/alteração isoladas; dono falsificado bloqueado; FKs cruzadas; dupla reserva; limites por meta/conta; transferência; benefícios; datas; líquido; perda/saldo inicial; recorrências idempotentes e exclusão preservando histórico |
-| Estado demonstrativo |      4 | Seeds fictícios consistentes; CRUD de receita recalcula saldo; vínculos/saldo reservado protegidos; ocorrência cancelada não é recriada                                                                                                                                                                            |
-| Contratos Zod        |      4 | Campo user_id descartado; centavos fracionários e transferência para mesma conta rejeitados; salário e taxas validados; entidades futuras não expostas                                                                                                                                                             |
-| APIs HTTP            |      8 | Origem externa rejeitada; sessão ausente bloqueada; user_id atribuído pela identidade; erro sanitizado; paginação acima de 500; payload/ID inválido; JSON nulo/array; RPC autenticada                                                                                                                              |
-| React / jsdom        |      5 | Criar/editar/excluir receita; aporte sem saldo mantém erro no formulário; tema/cor e simulador; navegação de todos os módulos; Auth indisponível sem projeto configurado                                                                                                                                           |
-| PWA                  |      3 | Manifest e dimensões de ícones; SW não intercepta APIs/Auth/Supabase/RSC/escritas; navegação offline usa só tela pública sem armazenar resposta financeira                                                                                                                                                         |
+- `npm run check`: **136 testes em 12 arquivos aprovados**, geração de tipos, TypeScript e build de produção aprovados.
+- Node.js **24.19.0** e Next.js **16.4.2**. Dependências NPM preservadas; nenhuma dependência de serviço pago adicionada.
+- Geist variável servida pelo próprio app. Arquivo de fonte validado, eixo de peso 100–900 e caracteres acentuados de pt-BR presentes. Licença SIL OFL incluída.
+- `git diff --check` sem erros. Build realizado sem credenciais remotas.
 
-Testes completos: `tests/`. Verificações específicas foram executadas primeiro no domínio e depois no banco antes de construir os fluxos da interface. As suítes ampliadas foram repetidas após correções observadas de contrato, comparação de texto e precisão de formatação.
+## Cobertura
 
-## Build
+| Camada                   | Verificação                                                                                                                                                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Dinheiro e domínio       | Centavos/Decimal, formatos BR, reservas, projeções, juros, parcelas e amortização; máscara com milhares, centavos incompletos e preservação de valores acima do limite para validação                              |
+| Interface monetária      | Digitação e edição no meio do valor, centavos ao sair do campo, valores iniciais formatados, simulador com milhar e resultado conferido                                                                            |
+| Preferências e navegação | Escuro padrão no demo, cor/fundo pelo seletor comum, manutenção da aparência durante CRUD e atualizações, ausência do breadcrumb e rolagem suave com alternativa para redução de movimento                         |
+| Calendários e listas     | Escolha de mês/ano/dia com componente comum, teclado e Esc, retorno do foco, geometria controlada do calendário em coluna direita do modal                                                                         |
+| Pagamento adiantado      | Criar regra futura, mudar para Já paguei, usar a data real, exibir Pago adiantado, acompanhar mês/filtro e manter uma ocorrência ao navegar novamente                                                              |
+| Receita recorrente       | Editar um item pendente conserva sua situação; Já recebi confirma e passa a data para hoje                                                                                                                         |
+| HTTP de confirmação      | Recusa data de pagamento futura, permite antecipação com data real até hoje, usa hoje na ausência de data e mantém confirmação idempotente e vinculada ao dono                                                     |
+| Atualização dos dados    | Edição aceita permanece confirmada e os dados ainda são lidos quando a sincronização de recorrências retorna erro                                                                                                  |
+| PostgreSQL local         | Migrações inicial, fase 2 e fase 2.2; novos perfis escuros sem alterar os existentes; pagamento antecipado debita uma vez e não volta a previsto; RLS, vínculos, saldos, limites, contratos e exclusão preservados |
+| CSV                      | Tipo/situação em português, data BR, valores com vírgula e neutralização de fórmulas; classificação de pagamento antecipado                                                                                        |
+| Segurança/PWA            | Origem, autenticação, permissões, limite de corpo e orçamento de escrita; CSP com nonce; cache restrito a ativos públicos, agora incluindo a fonte local                                                           |
 
-- Node.js 24.19.0; npm 11.9.0.
-- Next.js 16.4.2, TypeScript 5.9.3; demais versões resolvidas no package-lock.json.
-- `next typegen` aprovado; `tsc --noEmit` aprovado.
-- `next build` aprovado: páginas públicas/manifest estáticos e páginas privadas/APIs dinâmicas.
-- Sem dependência de credenciais remotas para compilar.
-- Scripts auxiliares validados sintaticamente; o smoke remoto não foi executado sem as duas contas de teste.
+Os testes anteriores de login, cadastro, isolamento entre usuários, salário bruto/líquido, metas, investimentos, empréstimos/financiamentos, automação e relatórios continuam na suíte completa.
 
-## Status por gate
+## Limites
 
-| Gate                                                    | Situação                                                              |
-| ------------------------------------------------------- | --------------------------------------------------------------------- |
-| Especificação antes do código                           | Concluído; referência parcial e protótipo ausente documentados        |
-| Domínio e precisão monetária                            | Aprovado localmente                                                   |
-| Schema, RLS e integridade                               | Aprovado em PostgreSQL embutido                                       |
-| CRUDs, relatórios, planejamento e simulação             | Implementados; contratos e fluxos React aprovados                     |
-| Build Next.js e estrutura PWA                           | Aprovados localmente                                                  |
-| Autenticação remota, confirmação/recuperação de e-mail  | Pendente no projeto Supabase de destino                               |
-| Migração/CRUD/RLS na instância remota                   | Pendente; smoke fornecido                                             |
-| Concorrência com duas conexões PostgreSQL independentes | Pendente; lock transacional implementado e roteiro fornecido          |
-| QA visual responsivo e acessibilidade em navegador real | Pendente: sem ferramenta de navegador compatível disponível na sessão |
-| HTTPS, instalação iOS/Android e offline instalado       | Pendente de publicação/homologação no dispositivo                     |
-| Implantação Vercel                                      | Não executada; conta/projeto externo não configurado nesta sessão     |
+Não houve publicação na Vercel, migração no Supabase remoto, criação/exclusão de contas reais ou alteração das configurações de Auth do usuário. A atualização deve seguir [FASE-2.2.md](FASE-2.2.md).
 
-**Os testes locais não equivalem a uma validação de produção.** A implementação pode ser executada e revisada; a liberação para dados pessoais depende dos gates externos acima. Não foi inventado resultado de autenticação, implantação ou instalação.
+A interface foi validada por tarefas React, leitura de CSS/componentes e build. **Não houve revisão visual em navegador real**, nem medição nos aparelhos citados. O teste de geometria usa medidas controladas e não substitui renderização real de fontes, popovers, foco, toque ou contraste. O roteiro inclui notebook a 100%, iPhone XR e Android.
 
-## Limites conhecidos
+O banco local dos testes é PGlite. Os testes validam políticas, constraints, transações e RPCs com papéis distintos; não representam duas conexões concorrentes independentes no Supabase remoto. A execução do agendamento gerenciado deve ser conferida após publicar. A fonte local e o PWA devem ser conferidos no navegador instalado.
 
-- Online para finanças; offline oferece somente aviso genérico.
-- BRL e lançamentos manuais; sem conexão bancária, parser de extratos, categorização automática, cotação ou imposto automático.
-- IPCA histórico não integrado: retorno real usa inflação anual assumida pelo usuário, explicitamente identificada.
-- Projeções com aporte no fim do mês; não alteram saldo ou reservas reais.
-- Métodos de priorização por data/prazo equivalem na mesma data-base, comportamento explicado na UI.
-- Relatórios carregam o histórico pessoal com paginação de 500, processando-o em memória. Para alto volume de importações futuras será preciso agregar no banco.
-- CSP permite inline para compatibilidade com Next.js; nonce por resposta fica como melhoria futura.
-- Contexto anterior recuperado parcialmente; sem reprodução afirmada do protótipo não localizado.
+O IPCA usa respostas controladas nos testes. A disponibilidade do serviço oficial e a configuração real de Auth precisam ser verificadas no deploy. SMTP, confirmação de e-mail, recuperação por e-mail, Turnstile e backups automáticos permanecem nas fases futuras acordadas.

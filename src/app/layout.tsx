@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./phase2.css";
+import { headers } from "next/headers";
 import PwaRegistration from "@/components/pwa-registration";
 export const metadata: Metadata = {
   title: "Meu Norte · Gerenciador financeiro pessoal",
@@ -14,15 +16,16 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#7160d8",
+  themeColor: "#14151e",
 };
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  await headers(); // Dynamic HTML: Next attaches the per-request CSP nonce to its scripts.
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
+    <html lang="pt-BR" data-theme="dark" suppressHydrationWarning>
       <body>
         {children}
         <PwaRegistration />

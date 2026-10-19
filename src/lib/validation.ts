@@ -103,6 +103,7 @@ export const recurrenceSchema = z
     start_date: date,
     end_date: date.nullable(),
     active: z.boolean(),
+    auto_post: z.boolean().default(false),
   })
   .superRefine((v, ctx) => {
     if (v.end_date && v.end_date < v.start_date)
@@ -125,10 +126,42 @@ export const recurrenceSchema = z
 export const profileSchema = z.object({
   display_name: z.string().trim().max(80),
   theme: z.enum(["light", "dark", "system"]),
-  accent: z.enum(["violet", "emerald", "blue", "rose"]),
-  background: z.enum(["plain", "gradient", "dots"]),
+  accent: z.enum([
+    "violet",
+    "emerald",
+    "blue",
+    "rose",
+    "amber",
+    "teal",
+    "indigo",
+    "coral",
+  ]),
+  background: z.enum(["plain", "gradient", "dots", "aurora", "grid", "waves"]),
 });
+export const loanSchema = z
+  .object({
+    name: text(80),
+    institution: z.string().trim().max(80).default(""),
+    kind: z.enum(["loan", "financing"]),
+    principal_cents: positive.nullable(),
+    installment_cents: positive,
+    total_installments: z.number().int().min(1).max(1200),
+    paid_before: z.number().int().min(0).max(1200),
+    first_due_date: date,
+    monthly_rate: z.number().min(0).max(10).nullable(),
+    cet_annual_rate: z.number().min(0).max(10).nullable(),
+    account_id: nullableId,
+  })
+  .superRefine((v, ctx) => {
+    if (v.paid_before > v.total_installments)
+      ctx.addIssue({
+        code: "custom",
+        message: "Parcelas pagas excedem o total.",
+        path: ["paid_before"],
+      });
+  });
 export const schemas = {
+  loans: loanSchema,
   accounts: accountSchema,
   transactions: transactionSchema,
   goals: goalSchema,

@@ -7,13 +7,19 @@ export default function FinanceChart({
   secondary,
   primaryLabel = "Receitas",
   secondaryLabel = "Despesas",
+  cashFlow = true,
+  hideValues = false,
 }: {
   labels: string[];
   primary: number[];
   secondary: number[];
   primaryLabel?: string;
   secondaryLabel?: string;
+  cashFlow?: boolean;
+  hideValues?: boolean;
 }) {
+  const primaryColor = cashFlow ? "var(--green)" : "var(--accent)";
+  const secondaryColor = cashFlow ? "var(--red)" : "var(--chart-secondary)";
   const id = useId().replaceAll(":", "");
   const max = Math.max(...primary, ...secondary, 1),
     min = Math.min(...primary, ...secondary, 0);
@@ -36,11 +42,11 @@ export default function FinanceChart({
     <div className="chart-wrap">
       <div className="chart-legend">
         <span>
-          <i className="dot accent" />
+          <i className="dot" style={{ background: primaryColor }} />
           {primaryLabel}
         </span>
         <span>
-          <i className="dot muted-dot" />
+          <i className="dot" style={{ background: secondaryColor }} />
           {secondaryLabel}
         </span>
       </div>
@@ -52,8 +58,8 @@ export default function FinanceChart({
       >
         <defs>
           <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--accent)" stopOpacity=".18" />
-            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+            <stop offset="0%" stopColor={primaryColor} stopOpacity=".18" />
+            <stop offset="100%" stopColor={primaryColor} stopOpacity="0" />
           </linearGradient>
         </defs>
         {[0, 0.5, 1].map((f) => (
@@ -73,7 +79,9 @@ export default function FinanceChart({
               fill="var(--muted)"
               fontSize="9"
             >
-              {Math.round((min + span * f) / 100).toLocaleString("pt-BR")}
+              {hideValues
+                ? "—"
+                : Math.round((min + span * f) / 100).toLocaleString("pt-BR")}
             </text>
           </g>
         ))}
@@ -81,7 +89,8 @@ export default function FinanceChart({
         <polyline
           points={points(secondary)}
           fill="none"
-          stroke="var(--chart-secondary)"
+          stroke={secondaryColor}
+          strokeDasharray={cashFlow ? "7 4" : undefined}
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -89,7 +98,7 @@ export default function FinanceChart({
         <polyline
           points={primaryPoints}
           fill="none"
-          stroke="var(--accent)"
+          stroke={primaryColor}
           strokeWidth="3"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -110,9 +119,42 @@ export default function FinanceChart({
             ),
         )}
       </svg>
+      {cashFlow && (
+        <details className="chart-values">
+          <summary>Ver valores do gráfico</summary>
+          <div className="table-scroll">
+            <table>
+              <caption className="sr-only">
+                Valores por período: {primaryLabel} e {secondaryLabel}
+              </caption>
+              <thead>
+                <tr>
+                  <th>Período</th>
+                  <th>{primaryLabel}</th>
+                  <th>{secondaryLabel}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {labels.map((label, i) => (
+                  <tr key={i}>
+                    <td>{label}</td>
+                    <td>
+                      {hideValues ? "Oculto" : formatMoney(primary[i] ?? 0)}
+                    </td>
+                    <td>
+                      {hideValues ? "Oculto" : formatMoney(secondary[i] ?? 0)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
       <span className="sr-only">
-        Último período: {primaryLabel} {formatMoney(primary.at(-1) ?? 0)},{" "}
-        {secondaryLabel} {formatMoney(secondary.at(-1) ?? 0)}.
+        {hideValues
+          ? "Valores ocultos."
+          : `Último período: ${primaryLabel} ${formatMoney(primary.at(-1) ?? 0)}, ${secondaryLabel} ${formatMoney(secondary.at(-1) ?? 0)}.`}
       </span>
     </div>
   );

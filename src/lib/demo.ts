@@ -1,4 +1,5 @@
 import type { Account, Entry, Entity, FinanceData } from "./types";
+import { loanSchedule } from "./finance/loans";
 import { today, addMonths } from "./finance/dates";
 import { balance, goalFunded, reserved } from "./finance/engine";
 import { recurrenceDates } from "./finance/recurrence";
@@ -152,6 +153,8 @@ export function demoData(): FinanceData {
   });
   return {
     accounts,
+    loans: [],
+    email: "visitante@demo.local",
     transactions,
     goals: [
       {
@@ -235,12 +238,14 @@ export function demoData(): FinanceData {
         start_date: `${month}-10`,
         end_date: null,
         active: true,
+        auto_post: false,
+        auto_from: now,
       },
     ],
     profile: {
       user_id: DEMO_USER,
       display_name: "Visitante",
-      theme: "light",
+      theme: "dark",
       accent: "violet",
       background: "gradient",
     },
@@ -248,6 +253,26 @@ export function demoData(): FinanceData {
 }
 export function validateDemo(data: FinanceData): void {
   const asOf = today();
+  for (const l of data.loans ?? []) {
+    if (
+      l.account_id &&
+      !data.accounts.some(
+        (a) => a.id === l.account_id && ["checking", "cash"].includes(a.kind),
+      )
+    )
+      throw new Error("Escolha uma conta em dinheiro para pagar as parcelas.");
+    if (
+      data.transactions.some(
+        (e) =>
+          e.loan_id === l.id &&
+          (e.installment_number! <= l.paid_before ||
+            e.installment_number! > l.total_installments),
+      )
+    )
+      throw new Error(
+        "Ajuste as parcelas registradas antes de alterar o histórico.",
+      );
+  }
   for (const a of data.accounts) {
     if (a.opening_date > asOf)
       throw new Error("A abertura da conta não pode ser futura.");
@@ -312,6 +337,7 @@ export function mutateDemo(
 ): FinanceData {
   const next = structuredClone(data);
   const id = typeof payload.id === "string" ? payload.id : crypto.randomUUID();
+  if (entity === "loans" && !next.loans) next.loans = [];
   const rows = next[entity] as unknown as Record<string, unknown>[];
   const index = rows.findIndex((r) => r.id === id);
   if (method !== "POST" && index < 0)
@@ -324,11 +350,16 @@ export function mutateDemo(
       ) ||
         next.contributions.some((c) => c.account_id === id) ||
         next.investments.some((i) => i.account_id === id) ||
+        (next.loans ?? []).some((l) => l.account_id === id) ||
         next.recurrences.some(
           (r) => r.source_account_id === id || r.target_account_id === id,
         ))
     )
       throw new Error("A conta possui vínculos. Remova-os antes de excluir.");
+    if (entity === "loans" && next.transactions.some((e) => e.loan_id === id))
+      throw new Error(
+        "O contrato possui pagamentos nos Lançamentos. Remova os vínculos antes de excluir.",
+      );
     if (entity === "goals" && next.contributions.some((c) => c.goal_id === id))
       throw new Error("Remova os aportes vinculados antes de excluir.");
     if (entity === "transactions" && rows[index].recurrence_id)
@@ -346,6 +377,7 @@ export function mutateDemo(
     const row = {
       ...(method === "POST"
         ? {
+            created_at: new Date().toISOString(),
             source: "manual",
             external_id: null,
             import_batch_id: null,
@@ -355,6 +387,16 @@ export function mutateDemo(
           }
         : rows[index]),
       ...parsed.data,
+      ...(entity === "recurrences"
+        ? {
+            auto_from:
+              method === "POST" ||
+              (payload.auto_post === true && !rows[index]?.auto_post) ||
+              (payload.active === true && !rows[index]?.active)
+                ? today()
+                : (rows[index].auto_from ?? today()),
+          }
+        : {}),
       id,
       user_id: DEMO_USER,
     };
@@ -375,13 +417,17 @@ export function generateDemo(data: FinanceData, from: string, until: string) {
       until,
       rule.end_date,
     )) {
+      const account = next.accounts.find(
+        (a) => a.id === (rule.source_account_id ?? rule.target_account_id),
+      );
+      if (!account || date < account.opening_date) continue;
       if (
         next.transactions.some(
           (e) => e.recurrence_id === rule.id && e.occurrence_date === date,
         )
       )
         continue;
-      next.transactions.push({
+      const entry: Entry = {
         id: crypto.randomUUID(),
         user_id: DEMO_USER,
         kind: rule.kind,
@@ -400,9 +446,27 @@ export function generateDemo(data: FinanceData, from: string, until: string) {
         categorization_rule_id: null,
         gross_cents: null,
         deductions_cents: null,
-      });
+      };
+      next.transactions.push(entry);
       count++;
     }
+  for (const entry of next.transactions) {
+    const rule = next.recurrences.find((r) => r.id === entry.recurrence_id);
+    if (
+      rule?.active &&
+      rule.auto_post &&
+      entry.status === "planned" &&
+      entry.date <= today() &&
+      entry.occurrence_date! >= (rule.auto_from ?? today())
+    ) {
+      entry.status = "posted";
+      try {
+        validateDemo(next);
+      } catch {
+        entry.status = "planned";
+      }
+    }
+  }
   validateDemo(next);
   return { data: next, count };
 }
@@ -411,4 +475,77 @@ export function updateDemoProfile(data: FinanceData, payload: unknown) {
     ...data,
     profile: { ...profileSchema.parse(payload), user_id: DEMO_USER },
   };
+}
+
+export function syncDemo(data: FinanceData) {
+  const horizon = addMonths(today(), 1);
+  const active = data.recurrences.filter((r) => r.active);
+  if (!active.length) return data;
+  let from = active.map((r) => r.start_date).sort()[0],
+    next = data;
+  while (from <= horizon) {
+    const until = addMonths(from, 12) < horizon ? addMonths(from, 12) : horizon;
+    next = generateDemo(next, from, until).data;
+    if (until === horizon) break;
+    from = until;
+  }
+  return next;
+}
+export function payLoanDemo(
+  data: FinanceData,
+  id: string,
+  number: number,
+  account: string,
+  date: string,
+  amount: number,
+) {
+  const next = structuredClone(data),
+    loan = next.loans?.find((l) => l.id === id);
+  if (
+    !loan ||
+    !Number.isInteger(number) ||
+    number <= loan.paid_before ||
+    number > loan.total_installments
+  )
+    throw new Error("Parcela inválida.");
+  if (
+    !next.accounts.some(
+      (a) => a.id === account && ["cash", "checking"].includes(a.kind),
+    )
+  )
+    throw new Error("Escolha uma conta em dinheiro.");
+  const existing = next.transactions.find(
+    (e) => e.loan_id === id && e.installment_number === number,
+  );
+  if (existing?.status === "posted") return next;
+  if (existing) {
+    existing.status = "posted";
+    existing.date = date;
+    existing.source_account_id = account;
+    existing.amount_cents = amount;
+  } else
+    next.transactions.push({
+      id: crypto.randomUUID(),
+      user_id: DEMO_USER,
+      kind: "expense",
+      description: `${loan.name} · Parcela ${number}/${loan.total_installments}`,
+      amount_cents: amount,
+      date,
+      status: "posted",
+      source_account_id: account,
+      target_account_id: null,
+      category: "Empréstimos e financiamentos",
+      gross_cents: null,
+      deductions_cents: null,
+      recurrence_id: null,
+      occurrence_date: null,
+      source: "manual",
+      external_id: null,
+      import_batch_id: null,
+      categorization_rule_id: null,
+      loan_id: id,
+      installment_number: number,
+    });
+  validateDemo(next);
+  return next;
 }

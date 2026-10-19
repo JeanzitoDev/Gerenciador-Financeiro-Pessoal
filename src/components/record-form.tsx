@@ -3,6 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import { X, ArrowRight, Info } from "lucide-react";
 import type { Entity, FinanceData } from "@/lib/types";
 import { moneyInput, parseMoney } from "@/lib/finance/money";
+import DateControl from "./date-control";
+import SelectControl from "./select-control";
+import CategoryInput from "./category-input";
+import MoneyInput from "./money-input";
 import { today } from "@/lib/finance/dates";
 export type FormState = {
   entity: Entity;
@@ -16,6 +20,7 @@ const labels: Record<Entity, string> = {
   contributions: "aporte",
   investments: "investimento",
   recurrences: "recorrência",
+  loans: "contrato",
 };
 const kinds = [
   ["income", "Receita"],
@@ -56,8 +61,19 @@ const emptyDefaults = {
   start_date: today(),
   end_date: "",
   active: "true",
+  auto_post: "false",
+  institution: "",
+  principal_cents: "",
+  installment_cents: "",
+  total_installments: "12",
+  paid_before: "0",
+  first_due_date: today(),
+  monthly_rate: "",
+  cet_annual_rate: "",
 };
 const currencyKeys = [
+  "principal_cents",
+  "installment_cents",
   "amount_cents",
   "opening_cents",
   "gross_cents",
@@ -87,20 +103,31 @@ export default function RecordForm({
         kind:
           state.entity === "accounts"
             ? "checking"
-            : state.entity === "transactions"
-              ? "expense"
-              : "income",
+            : state.entity === "loans"
+              ? "loan"
+              : state.entity === "transactions"
+                ? "expense"
+                : "income",
       } as Record<string, string>;
     for (const [key, value] of Object.entries(row)) {
       if (value === null || value === undefined) base[key] = "";
       else if (currencyKeys.includes(key))
         base[key] = moneyInput(Number(value));
-      else if (key === "annual_rate" || key === "inflation_rate")
+      else if (
+        [
+          "annual_rate",
+          "inflation_rate",
+          "monthly_rate",
+          "cet_annual_rate",
+        ].includes(key)
+      )
         base[key] = String(Number(value) * 100).replace(".", ",");
       else base[key] = String(value);
     }
     return base;
   });
+  const [ipca, setIpca] = useState("");
+  const [fetchingIpca, setFetchingIpca] = useState(false);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const ref = useRef<HTMLDialogElement>(null);
@@ -123,6 +150,7 @@ export default function RecordForm({
             target_account_id: "",
             gross_cents: "",
             deductions_cents: "",
+            status: "posted",
           }
         : {}),
     }));
@@ -139,24 +167,39 @@ export default function RecordForm({
   ) => (
     <label className="form-field" key={key}>
       <span>{label}</span>
-      <input
-        name={key}
-        value={values[key] ?? ""}
-        onChange={(e) => update(key, e.target.value)}
-        type={options?.type ?? "text"}
-        required={options?.required ?? true}
-        inputMode={
-          currencyKeys.includes(key) || key.includes("rate")
-            ? "decimal"
-            : undefined
-        }
-        min={options?.min}
-        max={options?.max}
-        maxLength={
-          key === "description" ? 140 : key === "note" ? 200 : undefined
-        }
-        placeholder={currencyKeys.includes(key) ? "0,00" : undefined}
-      />
+      {options?.type === "date" ? (
+        <DateControl
+          label={label}
+          value={values[key] ?? ""}
+          onChange={(v) => update(key, v)}
+          min={options?.min}
+          max={options?.max}
+          required={options?.required ?? true}
+        />
+      ) : currencyKeys.includes(key) ? (
+        <MoneyInput
+          name={key}
+          value={values[key] ?? ""}
+          aria-label={label}
+          onValueChange={(v) => update(key, v)}
+          required={options?.required ?? true}
+        />
+      ) : (
+        <input
+          name={key}
+          value={values[key] ?? ""}
+          aria-label={label}
+          onChange={(e) => update(key, e.target.value)}
+          type={options?.type ?? "text"}
+          required={options?.required ?? true}
+          inputMode={key.includes("rate") ? "decimal" : undefined}
+          min={options?.min}
+          max={options?.max}
+          maxLength={
+            key === "description" ? 140 : key === "note" ? 200 : undefined
+          }
+        />
+      )}
       {options?.hint && <small>{options.hint}</small>}
     </label>
   );
@@ -166,22 +209,19 @@ export default function RecordForm({
     options: string[][],
     required = true,
   ) => (
-    <label className="form-field" key={key}>
-      <span>{label}</span>
-      <select
+    <div className="form-field" key={key}>
+      <span>
+        {label}
+        {!required ? " (opcional)" : ""}
+      </span>
+      <SelectControl
         name={key}
+        label={label}
         value={values[key]}
-        onChange={(e) => update(key, e.target.value)}
-        required={required}
-      >
-        <option value="">Selecione</option>
-        {options.map(([value, label]) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </select>
-    </label>
+        onChange={(v) => update(key, v)}
+        options={options}
+      />
+    </div>
   );
   const accounts = data.accounts.map((a) => [a.id, a.name]);
   const money = (key: string, optional = false) =>
@@ -200,6 +240,21 @@ export default function RecordForm({
       const v = values;
       let payload: Record<string, unknown> = {};
       switch (state.entity) {
+        case "loans":
+          payload = {
+            name: v.name,
+            institution: v.institution,
+            kind: v.kind,
+            principal_cents: money("principal_cents", true),
+            installment_cents: money("installment_cents"),
+            total_installments: Number(v.total_installments),
+            paid_before: Number(v.paid_before),
+            first_due_date: v.first_due_date,
+            monthly_rate: v.monthly_rate ? rate("monthly_rate") : null,
+            cet_annual_rate: v.cet_annual_rate ? rate("cet_annual_rate") : null,
+            account_id: v.account_id || null,
+          };
+          break;
         case "accounts":
           payload = {
             name: v.name,
@@ -240,7 +295,10 @@ export default function RecordForm({
             description: v.description,
             amount_cents: money("amount_cents"),
             date: v.date,
-            status: v.status,
+            status:
+              v.kind === "income" && !state.record?.recurrence_id
+                ? "posted"
+                : v.status,
             source_account_id: ["expense", "transfer"].includes(v.kind)
               ? v.source_account_id || null
               : null,
@@ -267,6 +325,7 @@ export default function RecordForm({
             start_date: v.start_date,
             end_date: v.end_date || null,
             active: v.active === "true",
+            auto_post: v.auto_post === "true",
           };
           break;
       }
@@ -312,7 +371,10 @@ export default function RecordForm({
           </button>
         </div>
         <div className="dialog-fields">
-          {(e === "accounts" || e === "goals" || e === "investments") &&
+          {(e === "accounts" ||
+            e === "goals" ||
+            e === "investments" ||
+            e === "loans") &&
             field("name", "Nome")}
           {e === "accounts" && (
             <>
@@ -345,14 +407,8 @@ export default function RecordForm({
                     ? "Rendimento em R$ (aceita perda)"
                     : "Valor líquido (R$)",
                 )}
-                {e === "transactions"
-                  ? field("date", "Data", {
-                      type: "date",
-                      max: values.status === "posted" ? today() : undefined,
-                    })
-                  : field("start_date", "Primeira ocorrência", {
-                      type: "date",
-                    })}
+                {e === "recurrences" &&
+                  field("start_date", "Primeira ocorrência", { type: "date" })}
               </div>
               {["expense", "transfer"].includes(values.kind) &&
                 select("source_account_id", "Conta de origem", accounts)}
@@ -366,12 +422,87 @@ export default function RecordForm({
                         .map((a) => [a.id, a.name])
                     : accounts,
                 )}
-              {field("category", "Categoria")}
-              {e === "transactions" &&
-                select("status", "Situação", [
-                  ["posted", "Realizado"],
-                  ["planned", "Previsto"],
-                ])}
+              <CategoryInput
+                value={values.category}
+                onChange={(v) => update("category", v)}
+                entries={data.transactions}
+              />
+              {e === "transactions" && (
+                <>
+                  {(values.kind !== "income" ||
+                    !!state.record?.recurrence_id) && (
+                    <div className="form-field">
+                      <span>Situação</span>
+                      <SelectControl
+                        label="Situação"
+                        value={values.status}
+                        onChange={(v) =>
+                          setValues((old) => ({
+                            ...old,
+                            status: v,
+                            date: v === "posted" ? today() : old.date,
+                          }))
+                        }
+                        options={[
+                          [
+                            "posted",
+                            values.kind === "expense"
+                              ? "Já paguei"
+                              : values.kind === "income"
+                                ? "Já recebi"
+                                : "Realizado",
+                          ],
+                          [
+                            "planned",
+                            values.kind === "expense"
+                              ? "A pagar"
+                              : values.kind === "income"
+                                ? "A receber"
+                                : "Agendado",
+                          ],
+                        ]}
+                      />
+                    </div>
+                  )}
+                  {field(
+                    "date",
+                    values.kind === "expense" && values.status === "planned"
+                      ? "Data de vencimento"
+                      : values.kind === "expense"
+                        ? "Data do pagamento"
+                        : "Data",
+                    {
+                      type: "date",
+                      max:
+                        values.status === "posted" ||
+                        (values.kind === "income" &&
+                          !state.record?.recurrence_id)
+                          ? today()
+                          : undefined,
+                    },
+                  )}
+                  {values.status === "posted" &&
+                    state.record?.occurrence_date && (
+                      <p className="form-help">
+                        Data prevista:{" "}
+                        {String(state.record.occurrence_date)
+                          .split("-")
+                          .reverse()
+                          .join("/")}
+                        .
+                        {values.date < String(state.record.occurrence_date)
+                          ? ` Este lançamento será marcado como ${values.kind === "expense" ? "pago" : "recebido"} adiantado e entra no saldo na data informada.`
+                          : " O saldo usa a data em que o dinheiro entrou ou saiu."}
+                      </p>
+                    )}
+                  {values.kind === "income" && !state.record?.recurrence_id && (
+                    <p className="form-help">
+                      Registre o que já recebeu. Para repetir nos próximos
+                      meses, use Recorrências.
+                    </p>
+                  )}
+                </>
+              )}
               {e === "transactions" && values.kind === "income" && (
                 <details className="salary-details">
                   <summary>
@@ -406,10 +537,51 @@ export default function RecordForm({
                     ["true", "Ativa"],
                     ["false", "Pausada"],
                   ])}
+                  <label className="checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={values.auto_post === "true"}
+                      onChange={(e) =>
+                        update("auto_post", String(e.target.checked))
+                      }
+                    />
+                    <span>Registrar automaticamente na data</span>
+                  </label>
                   <p className="form-help">
-                    Gere previsões na tela de recorrências. Cada pagamento é
-                    confirmado por você nos lançamentos.
+                    Sem essa opção, o item aparecerá em “Para confirmar”, nos
+                    Lançamentos. Você recebe, paga ou pula o mês com um toque. O
+                    registro automático começa hoje; datas anteriores sempre
+                    aguardam sua confirmação.
                   </p>
+                  {(() => {
+                    const account = data.accounts.find(
+                      (a) =>
+                        a.id ===
+                        (values.kind === "income"
+                          ? values.target_account_id
+                          : values.source_account_id),
+                    );
+                    return account &&
+                      values.start_date < account.opening_date ? (
+                      <p className="info-box">
+                        <Info size={18} />
+                        Esta conta começa em{" "}
+                        {account.opening_date.split("-").reverse().join("/")}.
+                        Só vamos incluir ocorrências a partir dessa data. Para
+                        registrar antes, confira a data e o saldo inicial em
+                        Minhas contas.
+                      </p>
+                    ) : null;
+                  })()}
+                  {values.start_date && values.start_date < today() && (
+                    <p className="info-box">
+                      <Info size={18} />
+                      As ocorrências anteriores a hoje, dentro do histórico
+                      desta conta, serão incluídas como pendentes. Revise em
+                      Lançamentos; seu saldo antigo será mantido até você
+                      confirmar.
+                    </p>
+                  )}
                 </>
               )}
             </>
@@ -471,10 +643,103 @@ export default function RecordForm({
                 {field("annual_rate", "Taxa anual esperada (%)")}
                 {field("inflation_rate", "Inflação anual assumida (%)")}
               </div>
+              <button
+                type="button"
+                className="button secondary"
+                disabled={fetchingIpca}
+                onClick={async () => {
+                  setFetchingIpca(true);
+                  try {
+                    const r = await fetch("/api/indicators/ipca");
+                    const b = await r.json();
+                    if (!r.ok) throw new Error(b.error);
+                    update(
+                      "inflation_rate",
+                      (b.annual_rate * 100).toFixed(4).replace(".", ","),
+                    );
+                    setIpca(
+                      `IPCA observado em 12 meses, de ${b.from} a ${b.until}. Fonte: ${b.source}. Usá-lo na projeção é uma hipótese, não uma previsão.`,
+                    );
+                  } catch (e) {
+                    setIpca(
+                      e instanceof Error
+                        ? e.message
+                        : "Não foi possível consultar. Informe uma taxa manual.",
+                    );
+                  } finally {
+                    setFetchingIpca(false);
+                  }
+                }}
+              >
+                {fetchingIpca ? "Consultando…" : "Usar último IPCA de 12 meses"}
+              </button>
+              {ipca && (
+                <p className="form-help" role="status">
+                  {ipca}
+                </p>
+              )}
               <p className="form-help">
-                Taxas são premissas para simular. Aplicações e resgates usam
-                transferências; rendimentos realizados são informados
+                Você encontra a taxa da aplicação na carteira ou no contrato do
+                seu banco. Informe a taxa anual efetiva, não o percentual do
+                CDI. Taxas são hipóteses para simular. Aplicações e resgates
+                usam transferências; rendimentos realizados são informados
                 separadamente.
+              </p>
+            </>
+          )}
+          {e === "loans" && (
+            <>
+              {select("kind", "Tipo de contrato", [
+                ["loan", "Empréstimo"],
+                ["financing", "Financiamento"],
+              ])}
+              {field("institution", "Banco ou instituição (opcional)", {
+                required: false,
+              })}
+              <div className="form-grid">
+                {field("principal_cents", "Valor financiado (R$), opcional", {
+                  required: false,
+                })}
+                {field("installment_cents", "Valor da parcela (R$)")}
+              </div>
+              <div className="form-grid">
+                {field("total_installments", "Total de parcelas", {
+                  type: "number",
+                  min: "1",
+                  max: "1200",
+                })}
+                {field("paid_before", "Parcelas pagas antes de usar o app", {
+                  type: "number",
+                  min: "0",
+                  max: values.total_installments,
+                })}
+              </div>
+              {field(
+                "first_due_date",
+                "Vencimento da primeira parcela do contrato",
+                { type: "date" },
+              )}
+              <div className="form-grid">
+                {field("monthly_rate", "Juros mensais (%), opcional", {
+                  required: false,
+                })}
+                {field("cet_annual_rate", "CET anual (%), opcional", {
+                  required: false,
+                })}
+              </div>
+              {select(
+                "account_id",
+                "Conta sugerida para pagar",
+                data.accounts
+                  .filter((a) => ["checking", "cash"].includes(a.kind))
+                  .map((a) => [a.id, a.name]),
+                false,
+              )}
+              <p className="form-help">
+                O histórico já pago não cria despesas antigas. Cada novo
+                pagamento entra uma vez nos Lançamentos. Juros mensais e CET são
+                informações diferentes; consulte o contrato. Esta versão
+                acompanha parcelas fixas.
               </p>
             </>
           )}
