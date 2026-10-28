@@ -27,6 +27,16 @@ export const goalSchema = z.object({
   target_date: date,
   priority: z.number().int().min(1).max(99),
   monthly_budget_cents: cents.nonnegative().nullable(),
+  completed: z.boolean().default(false),
+  dependencies: z
+    .array(
+      z.object({
+        goal_id: id,
+        minimum_cents: positive.nullable(),
+      }),
+    )
+    .max(20)
+    .default([]),
 });
 export const contributionSchema = z.object({
   goal_id: id,

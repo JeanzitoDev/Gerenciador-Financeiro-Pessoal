@@ -21,6 +21,7 @@ export default function AuthForm({
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [error, setError] = useState("");
+  const [existingAccount, setExistingAccount] = useState(false);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("confirmado") === "1")
       setMessage("E-mail confirmado! Entre para continuar.");
@@ -30,6 +31,7 @@ export default function AuthForm({
     setError("");
     setMessage("");
     setPassword("");
+    setExistingAccount(false);
   };
   const titles = {
     login: "Bom te ver por aqui.",
@@ -48,6 +50,7 @@ export default function AuthForm({
     setBusy(true);
     setError("");
     setMessage("");
+    setExistingAccount(false);
     try {
       const response = await fetch("/api/auth", {
         method: "POST",
@@ -60,7 +63,11 @@ export default function AuthForm({
         }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
+      if (!response.ok) {
+        if (mode === "signup" && response.status === 409)
+          setExistingAccount(true);
+        throw new Error(data.error);
+      }
       if (mode === "login" || mode === "update") {
         window.location.assign("/app");
         return;
@@ -175,9 +182,26 @@ export default function AuthForm({
                 {error}
               </p>
             )}
+            {existingAccount && (
+              <button
+                className="button secondary wide"
+                type="button"
+                onClick={() => change("login")}
+              >
+                Ir para entrar <ArrowRight size={17} />
+              </button>
+            )}
             {message && (
               <p className="auth-alert" role="status">
                 {message}
+              </p>
+            )}
+            {mode === "signup" && (
+              <p className="signup-privacy">
+                O administrador tem acesso técnico aos dados financeiros no
+                banco desta versão. Leia{" "}
+                <Link href="/privacidade">como seus dados são tratados</Link>{" "}
+                antes de criar sua conta.
               </p>
             )}
             <button
@@ -210,7 +234,7 @@ export default function AuthForm({
                   </span>
                 )}
                 <span className="muted" style={{ fontSize: 10 }}>
-                  Acesso seguro
+                  Seu acesso pessoal
                 </span>
               </div>
               <p className="auth-switch">

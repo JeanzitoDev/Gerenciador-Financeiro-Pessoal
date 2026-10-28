@@ -1,13 +1,19 @@
-# Atualização 2.2 · Meu Norte 2.2.0
+# Atualização 2.2 · Meu Norte 2.2.1
 
 Esta versão inclui as correções da 2.1.1 e os ajustes de interface, tipografia, tema, máscaras de dinheiro e pagamentos adiantados da fase 2.2.
+
+## Correção 2.2.1: atualização silenciosa
+
+O aviso “Atualizando…” aparecia a cada minuto e ao voltar para a janela porque toda sincronização ativava o indicador. Agora esses dois gatilhos carregam os dados em segundo plano, mantendo a tela disponível. O carregamento inicial e as ações iniciadas pela pessoa continuam com seus retornos; falhas continuam visíveis com a opção de tentar novamente.
+
+Se você já publicou a v2.2.0, copie o código atualizado e faça commit/push para a Vercel. Confira **v2.2.1** no rodapé após o deploy. **Não há migração SQL adicional** e as variáveis de ambiente são as mesmas.
 
 ## Atualizar
 
 1. Se o banco já está na fase 2, execute no SQL Editor apenas **`supabase/migrations/202610190003_phase22.sql`**. O arquivo define `dark` como padrão para os novos perfis. Não apaga dados nem modifica a escolha de tema dos usuários existentes. Não execute novamente a migração inicial. Para um projeto ainda na v1, siga primeiro [FASE-2.md](FASE-2.md).
 2. Copie o conteúdo de `meu-norte-v2.2` do ZIP para o projeto, preservando `.env.local` e a pasta `.git`. O ZIP contém o código completo.
 3. Execute `npm ci` e `npm run build`. Faça commit/push e publique pelo seu fluxo habitual da Vercel.
-4. Atualize a aba e confira **v2.2.0** no rodapé/menu. As variáveis de ambiente continuam as mesmas.
+4. Atualize a aba e confira **v2.2.1** no rodapé/menu. As variáveis de ambiente continuam as mesmas.
 
 ## Interface e tipografia
 

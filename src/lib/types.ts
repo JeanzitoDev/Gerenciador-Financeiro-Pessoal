@@ -38,6 +38,12 @@ export interface Goal extends Owned {
   target_date: string;
   priority: number;
   monthly_budget_cents: number | null;
+  completed?: boolean;
+  dependencies?: GoalDependency[];
+}
+export interface GoalDependency {
+  goal_id: string;
+  minimum_cents: number | null;
 }
 export interface Contribution extends Owned {
   goal_id: string;
@@ -69,6 +75,9 @@ export interface Recurrence extends Owned {
 export interface Profile {
   user_id: string;
   display_name: string;
+  onboarding_step?: number;
+  onboarding_dismissed?: boolean;
+  onboarding_completed_at?: string | null;
   theme: "light" | "dark" | "system";
   accent:
     | "violet"

@@ -116,8 +116,8 @@ export default function Home() {
           },
           {
             icon: TrendingUp,
-            title: "O futuro, em perspectiva.",
-            text: "Acompanhe rendimentos realizados e explore simulações com juros compostos e inflação.",
+            title: "Cabe no meu bolso?",
+            text: "Planeje sua próxima compra, veja quanto juntar e entenda como ela muda seu orçamento.",
           },
         ].map(({ icon: Icon, title, text }) => (
           <article className="landing-feature" key={title}>
@@ -130,6 +130,8 @@ export default function Home() {
         ))}
       </section>
       <footer className="landing-footer">
+        <Link href="/privacidade">Privacidade dos dados</Link>
+        {" · "}
         Meu Norte · v{APP_VERSION} · © {new Date().getFullYear()}{" "}
         <a
           href="https://github.com/JeanzitoDev"

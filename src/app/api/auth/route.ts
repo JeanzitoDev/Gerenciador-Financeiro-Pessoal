@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     if (!isConfigured())
       throw new ApiError(503, "Configure o Supabase para habilitar o acesso.");
     const raw = await readJson(request);
-    // Legacy passwords may be shorter at sign-in, but new passwords require 12 characters.
+    // Legacy passwords may be shorter at sign-in; new passwords require eight characters.
     const result = (
       raw.action === "login"
         ? authSchema.extend({ password: z.string().min(1).max(128) })
@@ -96,14 +96,20 @@ export async function POST(request: Request) {
             ? "Confira o endereço de e-mail informado."
             : error.code === "email_exists" ||
                 error.code === "user_already_exists"
-              ? "Não foi possível criar a conta. Tente entrar."
+              ? "Já existe uma conta com esse e-mail. Entre para continuar."
               : error.status === 429
                 ? "Muitas tentativas. Aguarde antes de tentar novamente."
                 : error.status === 0
                   ? "Não foi possível conectar ao serviço de acesso. Tente novamente."
                   : "Não foi possível criar a conta. Confira os dados e tente novamente.";
         throw new ApiError(
-          error.status === 429 ? 429 : error.status === 0 ? 503 : 400,
+          error.code === "email_exists" || error.code === "user_already_exists"
+            ? 409
+            : error.status === 429
+              ? 429
+              : error.status === 0
+                ? 503
+                : 400,
           message,
         );
       }

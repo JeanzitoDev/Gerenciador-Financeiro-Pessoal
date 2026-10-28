@@ -1,5 +1,13 @@
 // @vitest-environment jsdom
-import { beforeAll, afterEach, describe, it, expect, vi } from "vitest";
+import {
+  beforeAll,
+  beforeEach,
+  afterEach,
+  describe,
+  it,
+  expect,
+  vi,
+} from "vitest";
 import {
   render,
   screen,
@@ -7,6 +15,7 @@ import {
   cleanup,
   waitFor,
   fireEvent,
+  act,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import FinanceApp from "../src/components/finance-app";
@@ -40,6 +49,15 @@ beforeAll(() => {
     })),
   });
   window.scrollTo = vi.fn();
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+});
+beforeEach(() => {
+  window.matchMedia = vi.fn().mockImplementation(() => ({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+  vi.mocked(HTMLElement.prototype.scrollIntoView).mockClear();
 });
 afterEach(() => {
   cleanup();
@@ -50,7 +68,16 @@ async function chooseOption(label: string, option: string) {
   await userEvent.click(screen.getByRole("combobox", { name: label }));
   await userEvent.click(screen.getByRole("option", { name: option }));
 }
-function navigate(name: string) {
+async function navigate(name: string) {
+  if (name === "Preferências") {
+    await userEvent.click(
+      screen.getByRole("button", { name: "Abrir minha conta" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Perfil e preferências" }),
+    );
+    return;
+  }
   return userEvent.click(screen.getAllByRole("button", { name })[0]);
 }
 describe("fluxos React com dados fictícios", () => {
@@ -152,29 +179,30 @@ describe("fluxos React com dados fictícios", () => {
       screen.getByRole("button", { name: "Salvar preferências" }),
     );
     expect(document.documentElement.dataset.accent).toBe("emerald");
-    await navigate("Simulador");
-    const initial = screen.getByLabelText("Valor inicial (R$)");
-    await user.clear(initial);
-    await user.type(initial, "1000,00");
-    const monthly = screen.getByLabelText("Aporte no fim do mês (R$)");
-    await user.clear(monthly);
-    await user.type(monthly, "0,00");
-    const months = screen.getByLabelText("Prazo em meses");
-    await user.clear(months);
-    await user.type(months, "12");
-    const rate = screen.getByLabelText("Rentabilidade anual (%)");
-    await user.clear(rate);
-    await user.type(rate, "12");
-    await user.click(screen.getByRole("button", { name: "Simular futuro" }));
+    await navigate("Cabe no meu bolso?");
+    await user.type(screen.getByLabelText("Preço da compra (R$)"), "1000,00");
+    await user.type(
+      screen.getByLabelText("Renda líquida por mês (R$)"),
+      "2000,00",
+    );
+    const available = screen.getByLabelText(
+      "Dinheiro disponível para este plano (R$)",
+    );
+    await user.clear(available);
+    await user.type(available, "1500,00");
+    await user.click(
+      screen.getByRole("button", { name: "Ver se cabe no meu bolso" }),
+    );
     expect(
-      screen.getByRole("heading", { name: formatMoney(112000) }),
-    ).toBeTruthy();
+      screen.getByRole("heading", { name: "Cabe no orçamento informado" })
+        .textContent,
+    ).toContain("Cabe no orçamento informado");
   });
   it("mostra todos os módulos sem erros de renderização", async () => {
     render(<FinanceApp demo />);
     for (const name of [
       "Minhas contas",
-      "Investimentos",
+      "Cabe no meu bolso?",
       "Recorrências",
       "Planejamento",
       "Relatórios",
@@ -441,6 +469,70 @@ describe("fase 2.1 — aparência e calendários", () => {
 });
 
 describe("fase 2.2 — rotina e consistência", () => {
+  it("atualiza em segundo plano ao voltar à janela e a cada minuto sem mostrar popup", async () => {
+    const server = demoData();
+    let syncGate: Promise<Response> | null = null;
+    let dataFails = false;
+    const interval = vi.spyOn(globalThis, "setInterval");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/recurrences/sync")
+          return syncGate ?? Response.json({ ok: true });
+        if (dataFails)
+          return Response.json(
+            { error: "Conexão indisponível." },
+            { status: 503 },
+          );
+        return Response.json(structuredClone(server));
+      }),
+    );
+    render(<FinanceApp demo={false} />);
+    await screen.findByRole("heading", { name: "Olá, Visitante!" });
+    const refresh = interval.mock.calls.find(
+      ([, delay]) => delay === 60000,
+    )?.[0];
+    expect(typeof refresh).toBe("function");
+    for (const name of ["Foco", "Minuto"]) {
+      server.profile.display_name = name;
+      let release!: (response: Response) => void;
+      syncGate = new Promise((resolve) => {
+        release = resolve;
+      });
+      if (name === "Foco") fireEvent(window, new Event("focus"));
+      else
+        act(() => {
+          if (typeof refresh === "function") refresh();
+        });
+      expect(screen.queryByText("Atualizando…")).toBeNull();
+      // Keep the request pending until after checking the UI, then verify new data arrives.
+      await act(async () => {
+        release(Response.json({ ok: true }));
+      });
+      await screen.findByRole("heading", { name: `Olá, ${name}!` });
+    }
+    syncGate = null;
+    dataFails = true;
+    fireEvent(window, new Event("focus"));
+    await screen.findByRole("alert");
+    expect(screen.getByText("Conexão indisponível.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Olá, Minuto!" })).toBeTruthy();
+    // Manual retries retain progress feedback and clear the error on success.
+    let release!: (response: Response) => void;
+    syncGate = new Promise((resolve) => {
+      release = resolve;
+    });
+    dataFails = false;
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(screen.getByText("Atualizando…")).toBeTruthy();
+    await act(async () => {
+      release(Response.json({ ok: true }));
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByText("Atualizando…")).toBeNull();
+    });
+  });
   it("troca mês e ano pelo seletor compartilhado e mantém Escape dentro do calendário", async () => {
     function Example() {
       const [value, set] = useState("2026-10-18");
@@ -572,31 +664,27 @@ describe("fase 2.2 — rotina e consistência", () => {
     expect(input.value).toBe("192.345,60");
     expect(input.selectionStart).toBe(2);
   });
-  it("simula valores com milhar e centavos sem mudar os campos de taxa e prazo", async () => {
+  it("simula compras com máscaras de milhar e centavos", async () => {
     const user = userEvent.setup();
     render(<Simulator />);
-    const initial = screen.getByLabelText("Valor inicial (R$)");
-    const monthly = screen.getByLabelText("Aporte no fim do mês (R$)");
-    expect(initial).toHaveProperty("value", "1.000,00");
-    await user.clear(initial);
-    await user.type(initial, "1234567,8");
-    await user.clear(monthly);
-    await user.type(monthly, "1234,56");
-    for (const [name, value] of [
-      ["Prazo em meses", "1"],
-      ["Rentabilidade anual (%)", "0"],
-      ["Inflação anual (%)", "0"],
-    ]) {
-      const field = screen.getByLabelText(name);
-      await user.clear(field);
-      await user.type(field, value);
-    }
-    expect(initial).toHaveProperty("value", "1.234.567,80");
-    expect(monthly).toHaveProperty("value", "1.234,56");
-    await user.click(screen.getByRole("button", { name: "Simular futuro" }));
+    const price = screen.getByLabelText("Preço da compra (R$)");
+    await user.type(price, "1234567,8");
+    await user.type(
+      screen.getByLabelText("Renda líquida por mês (R$)"),
+      "2000,00",
+    );
+    const available = screen.getByLabelText(
+      "Dinheiro disponível para este plano (R$)",
+    );
+    await user.clear(available);
+    await user.type(available, "2000000,00");
+    await user.click(
+      screen.getByRole("button", { name: "Ver se cabe no meu bolso" }),
+    );
+    expect(price).toHaveProperty("value", "1.234.567,80");
     expect(
-      screen.getByRole("heading", { name: formatMoney(123580236) }),
-    ).toBeTruthy();
+      screen.getByRole("region", { name: "Resultado da compra" }).textContent,
+    ).toContain(formatMoney(123456780));
   });
   it("repete o clique no menu subindo suavemente e respeita a redução de movimento", async () => {
     render(<FinanceApp demo />);
@@ -746,5 +834,443 @@ describe("contratos pela interface", () => {
     expect(
       screen.getAllByText("Contrato de teste · Parcela 1/12"),
     ).toHaveLength(1);
+  });
+});
+
+describe("fase 2.3 — primeiros passos e decisões", () => {
+  it("leva o cadastro duplicado para Entrar com e-mail mantido e senha limpa", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            error: "Já existe uma conta com esse e-mail. Entre para continuar.",
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    render(<AuthForm configured />);
+    await user.click(screen.getByRole("button", { name: "Criar conta" }));
+    await user.type(screen.getByLabelText("Como podemos te chamar?"), "Jean");
+    await user.type(screen.getByLabelText("E-mail"), "jean@example.com");
+    await user.type(screen.getByLabelText("Senha"), "12345678");
+    await user.click(screen.getByRole("button", { name: "Criar minha conta" }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Ir para entrar" }));
+    expect(screen.getByLabelText("E-mail")).toHaveProperty(
+      "value",
+      "jean@example.com",
+    );
+    expect(screen.getByLabelText("Senha")).toHaveProperty("value", "");
+    expect(
+      screen.getByRole("button", { name: "Entrar no meu espaço" }),
+    ).toBeTruthy();
+  });
+  it("orienta uma nova conta, persiste as etapas e permite rever o guia", async () => {
+    const user = userEvent.setup();
+    const server = demoData();
+    server.accounts = [];
+    server.transactions = [];
+    server.goals = [];
+    server.contributions = [];
+    server.investments = [];
+    server.recurrences = [];
+    server.profile.onboarding_step = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === "/api/data") return Response.json(structuredClone(server));
+        if (url === "/api/records/accounts")
+          server.accounts.push({
+            ...JSON.parse(String(init?.body)),
+            id: "00000000-0000-4000-8000-000000000099",
+            user_id: server.profile.user_id,
+          });
+        if (url === "/api/onboarding") {
+          const body = JSON.parse(String(init?.body));
+          server.profile.onboarding_step = body.step;
+          server.profile.onboarding_dismissed = body.dismissed;
+          server.profile.onboarding_completed_at =
+            body.step === 4 && !body.dismissed
+              ? new Date().toISOString()
+              : null;
+          return Response.json({
+            ok: true,
+            completed_at: server.profile.onboarding_completed_at,
+          });
+        }
+        return Response.json({ ok: true });
+      }),
+    );
+    render(<FinanceApp demo={false} />);
+    await screen.findByRole("region", { name: "Primeiros passos" });
+    await user.click(
+      screen.getByRole("button", { name: "Cadastrar uma conta" }),
+    );
+    const dialog = within(screen.getByRole("dialog"));
+    await user.type(dialog.getByLabelText("Nome"), "Minha conta");
+    await user.click(dialog.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await user.click(
+      screen.getByRole("button", { name: "Já cadastrei minhas contas" }),
+    );
+    await screen.findByRole("heading", { name: "Conte o que se repete" });
+    expect(server.profile.onboarding_step).toBe(1);
+    await user.click(
+      screen.getByRole("button", { name: "Continuar tutorial depois" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("region", { name: "Primeiros passos" }),
+      ).toBeNull(),
+    );
+    expect(server.profile.onboarding_dismissed).toBe(true);
+    await navigate("Preferências");
+    await user.click(
+      screen.getByRole("button", { name: "Ver tutorial inicial" }),
+    );
+    await screen.findByRole("heading", { name: "Conte o que se repete" });
+    expect(server.profile.onboarding_step).toBe(1);
+    expect(server.profile.onboarding_dismissed).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Continuar" }));
+    await screen.findByRole("heading", {
+      name: "Inclua as parcelas que já existem",
+    });
+    await user.click(
+      screen.getByRole("button", { name: "Continuar / não tenho contratos" }),
+    );
+    await screen.findByRole("heading", {
+      name: "Pronto para cuidar do dia a dia",
+    });
+    await user.click(
+      screen.getByRole("button", { name: "Conhecer os lançamentos" }),
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Lançamentos" }),
+    ).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Concluir primeiros passos" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("region", { name: "Primeiros passos" }),
+      ).toBeNull(),
+    );
+    expect(server.profile.onboarding_step).toBe(4);
+    await navigate("Preferências");
+    await user.click(
+      screen.getByRole("button", { name: "Ver tutorial inicial" }),
+    );
+    await screen.findByRole("heading", {
+      name: "Comece pelo dinheiro que você tem",
+    });
+    expect(server.profile.onboarding_step).toBe(0);
+  });
+  it("transforma uma compra genérica em meta sem reservar dinheiro automaticamente", async () => {
+    const user = userEvent.setup();
+    render(<FinanceApp demo />);
+    expect(screen.queryByRole("button", { name: "Investimentos" })).toBeNull();
+    await navigate("Cabe no meu bolso?");
+    await chooseOption("O que você está planejando?", "Celular ou eletrônico");
+    await user.type(
+      screen.getByLabelText("Qual é a sua conquista? (opcional)"),
+      "iPhone",
+    );
+    await user.type(screen.getByLabelText("Preço da compra (R$)"), "5000,00");
+    await user.type(
+      screen.getByLabelText("Renda líquida por mês (R$)"),
+      "4000,00",
+    );
+    for (const [label, value] of [
+      ["Gastos mensais atuais, com parcelas (R$)", "3000,00"],
+      ["Dinheiro disponível para este plano (R$)", "1000,00"],
+      ["Quanto pretendo guardar por mês (R$)", "500,00"],
+    ]) {
+      const input = screen.getByLabelText(label);
+      await user.clear(input);
+      await user.type(input, value);
+    }
+    await user.click(
+      screen.getByRole("button", { name: "Ver se cabe no meu bolso" }),
+    );
+    expect(screen.getByText(/8 meses/)).toBeTruthy();
+    expect(document.activeElement).toBe(
+      screen.getByRole("region", { name: "Resultado da compra" }),
+    );
+    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenLastCalledWith({
+      behavior: "smooth",
+      block: "start",
+    });
+    await user.click(
+      screen.getByRole("button", { name: "Transformar em meta" }),
+    );
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByLabelText("Nome")).toHaveProperty(
+      "value",
+      "Conquistar iPhone",
+    );
+    expect(dialog.getByLabelText("Valor da meta (R$)")).toHaveProperty(
+      "value",
+      "5.000,00",
+    );
+    await user.click(dialog.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await navigate("Metas");
+    expect(
+      screen.getByRole("heading", { name: "Conquistar iPhone" }),
+    ).toBeTruthy();
+    const card = screen
+      .getByRole("heading", { name: "Conquistar iPhone" })
+      .closest("article")!;
+    expect(within(card).getByText("0% do caminho")).toBeTruthy();
+  });
+  it("configura conclusão e valor mínimo como condições e explica a espera no planejamento", async () => {
+    const user = userEvent.setup();
+    render(<FinanceApp demo />);
+    await navigate("Metas");
+    await user.click(
+      screen.getByRole("button", { name: "Editar Investir em mim" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar condição" }),
+    );
+    await chooseOption("Meta da condição 1", "Próxima viagem");
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar condição" }),
+    );
+    await chooseOption("Meta da condição 2", "Reserva de emergência");
+    await chooseOption("Condição 2", "Ter um valor reservado");
+    await user.type(
+      screen.getByLabelText("Valor da condição 2 (R$)"),
+      "10000,00",
+    );
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Salvar",
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await navigate("Planejamento");
+    await user.click(screen.getByText("Ver as contas do plano"));
+    const row = screen.getByRole("row", { name: /Investir em mim/ });
+    expect(within(row).getByText("Concluir Próxima viagem")).toBeTruthy();
+    expect(
+      within(row).getByText(/Reservar mais R\$.*2.200,00 em Reserva/),
+    ).toBeTruthy();
+    expect(within(row).getAllByRole("cell")[4].textContent).toBe(
+      formatMoney(0),
+    );
+    await navigate("Metas");
+    await user.click(
+      screen.getByRole("button", { name: "Editar Próxima viagem" }),
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: "Esta meta já foi concluída" }),
+    );
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Salvar",
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await navigate("Planejamento");
+    await user.click(screen.getByText("Ver as contas do plano"));
+    const after = screen.getByRole("row", { name: /Investir em mim/ });
+    expect(within(after).queryByText("Concluir Próxima viagem")).toBeNull();
+    expect(within(after).getByText(/Reservar mais/)).toBeTruthy();
+  });
+});
+
+describe("referência de juros na interface", () => {
+  it("uma consulta atrasada não substitui os juros que a pessoa digitou", async () => {
+    const user = userEvent.setup();
+    let release!: (value: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            release = resolve;
+          }),
+      ),
+    );
+    render(<Simulator />);
+    await chooseOption("O que você está planejando?", "Casa ou apartamento");
+    await chooseOption("Como pretende pagar?", "Parcelado ou financiado");
+    await user.click(
+      screen.getByRole("button", {
+        name: "Usar juros médios do Banco Central",
+      }),
+    );
+    const rate = screen.getByLabelText("Juros por mês (%)");
+    await user.clear(rate);
+    await user.type(rate, "1,8");
+    await act(async () =>
+      release(
+        Response.json({
+          monthly_rate: 0.02,
+          source: "Banco Central",
+          source_url: "https://dadosabertos.bcb.gov.br",
+          date: "01/08/2026",
+        }),
+      ),
+    );
+    expect(rate).toHaveProperty("value", "1,8");
+    expect(screen.queryByText(/referência de 01/)).toBeNull();
+  });
+});
+
+describe("fase 2.3.1 — caminhos de uso", () => {
+  it("leva ao resultado sem animação quando a pessoa pede movimento reduzido", async () => {
+    const user = userEvent.setup();
+    vi.mocked(window.matchMedia).mockImplementation(
+      (query: string) =>
+        ({
+          matches: query.includes("prefers-reduced-motion"),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }) as unknown as MediaQueryList,
+    );
+    render(<Simulator />);
+    await user.type(screen.getByLabelText("Preço da compra (R$)"), "100,00");
+    await user.type(
+      screen.getByLabelText("Renda líquida por mês (R$)"),
+      "5000,00",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Ver se cabe no meu bolso" }),
+    );
+    expect(document.activeElement).toBe(
+      screen.getByRole("region", { name: "Resultado da compra" }),
+    );
+    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenLastCalledWith({
+      behavior: "instant",
+      block: "start",
+    });
+  });
+  it("abre o tutorial para uma conta antiga e não volta a mostrá-lo após concluir e recarregar", async () => {
+    const user = userEvent.setup();
+    const server = demoData();
+    server.profile.onboarding_step = 4;
+    server.profile.onboarding_completed_at = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === "/api/data") return Response.json(structuredClone(server));
+        if (url === "/api/onboarding") {
+          const body = JSON.parse(String(init?.body));
+          Object.assign(server.profile, {
+            onboarding_step: body.step,
+            onboarding_dismissed: body.dismissed,
+            onboarding_completed_at:
+              body.step === 4 && !body.dismissed
+                ? new Date().toISOString()
+                : null,
+          });
+          return Response.json({
+            ok: true,
+            completed_at: server.profile.onboarding_completed_at,
+          });
+        }
+        return Response.json({ ok: true });
+      }),
+    );
+    const first = render(<FinanceApp demo={false} />);
+    await screen.findByRole("heading", {
+      name: "Comece pelo dinheiro que você tem",
+    });
+    for (const name of [
+      "Já cadastrei minhas contas",
+      "Continuar",
+      "Continuar / não tenho contratos",
+      "Concluir primeiros passos",
+    ]) {
+      await user.click(await screen.findByRole("button", { name }));
+    }
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("region", { name: "Primeiros passos" }),
+      ).toBeNull(),
+    );
+    expect(server.profile.onboarding_completed_at).toMatch(
+      /^\d{4}-\d{2}-\d{2}T/,
+    );
+    first.unmount();
+    render(<FinanceApp demo={false} />);
+    await screen.findByRole("heading", { name: "Olá, Visitante!" });
+    expect(
+      screen.queryByRole("region", { name: "Primeiros passos" }),
+    ).toBeNull();
+  });
+
+  it("abre todas as categorias pela seta e mantém preferências e créditos num só lugar", async () => {
+    const user = userEvent.setup();
+    render(<FinanceApp demo />);
+    expect(screen.queryByText("BEM-VINDO, VISITANTE")).toBeNull();
+    const navigation = screen.getByRole("navigation", {
+      name: "Navegação principal",
+    });
+    expect(
+      within(navigation).queryByRole("button", { name: "Preferências" }),
+    ).toBeNull();
+    expect(
+      within(screen.getByRole("main")).queryByText("JeanzitoDev"),
+    ).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "Ver todas as categorias" }),
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Relatórios" }),
+    ).toBeTruthy();
+    expect(document.activeElement).toBe(
+      screen.getByRole("region", { name: "Composição das despesas" }),
+    );
+    await navigate("Visão geral");
+    await user.click(screen.getByRole("button", { name: "Ver relatórios" }));
+    expect(document.activeElement).toBe(
+      screen.getByRole("region", { name: "Evolução do caixa" }),
+    );
+    await navigate("Preferências");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Preferências" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("region", { name: "Privacidade dos seus dados" })
+        .textContent,
+    ).toContain("administrador do projeto");
+  });
+
+  it("revisa e salva uma reserva pelo planejamento e desconta o valor do plano", async () => {
+    const user = userEvent.setup();
+    render(<FinanceApp demo />);
+    await navigate("Planejamento");
+    const budget = screen.getByLabelText(
+      "Quanto ainda quero separar neste mês? (R$)",
+    );
+    await user.clear(budget);
+    await user.type(budget, "100,00");
+    const reserve = screen
+      .getAllByRole("button", { name: /^Revisar e reservar para/ })
+      .find((button) => !(button as HTMLButtonElement).disabled)!;
+    await user.click(reserve);
+    let dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByLabelText("Reservar (R$)")).toHaveProperty(
+      "value",
+      "100,00",
+    );
+    await user.click(dialog.getByRole("button", { name: "Cancelar" }));
+    expect(budget).toHaveProperty("value", "100,00");
+    await user.click(reserve);
+    dialog = within(screen.getByRole("dialog"));
+    await user.click(dialog.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(budget).toHaveProperty("value", "0,00");
+    expect(
+      screen
+        .getAllByRole("button", { name: /^Revisar e reservar para/ })
+        .every((button) => (button as HTMLButtonElement).disabled),
+    ).toBe(true);
   });
 });

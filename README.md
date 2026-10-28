@@ -1,10 +1,12 @@
-# Meu Norte · v2.2.0
+# Meu Norte · v2.3.1
 
 Gerenciador financeiro pessoal em **Next.js, TypeScript, Tailwind CSS, Supabase Auth e PostgreSQL**. PWA com finanças online, BRL em centavos e dados separados por usuário.
 
 ## Atualizar a versão já publicada
 
-Se já instalou uma versão da fase 2, siga **[a atualização 2.2](docs/FASE-2.2.md)**. Esta revisão inclui uma migração pequena para o tema padrão de novas contas, além do código atualizado.
+Para quem está na **v2.3.0**, siga **[a atualização 2.3.1](docs/FASE-2.3.1.md)**: aplique somente `202610220005_phase231.sql`, atualize o código e faça o deploy. Quem está na 2.2.0/2.2.1 precisa aplicar também a migration da fase 2.3, conforme o guia. A atualização corrige o tutorial de contas existentes, reduz duplicações e permite revisar aportes pelo Planejamento.
+
+**Privacidade:** as contas têm permissões por usuário, mas o administrador consegue consultar os dados no banco. A versão inclui aviso público em `/privacidade`. Leia [a análise de uso e criptografia](docs/USABILIDADE-E-PRIVACIDADE.md); a proposta de chave exclusiva no navegador ainda não foi implementada.
 
 Para atualizar a v1, leia primeiro **[o roteiro da fase 2](docs/FASE-2.md)**. Use a migração incremental `202610180002_phase2.sql`, depois atualize o código e faça o deploy. **Não execute novamente a migração inicial em um banco já existente.**
 
@@ -36,7 +38,7 @@ Mantenha a validação de certificados habilitada. Se o certificado corporativo 
 ## Configurar Supabase e Vercel
 
 - Projeto novo: aplique, em ordem, os arquivos em `supabase/migrations/`.
-- Projeto existente da versão anterior: aplique apenas a migração `202610180002_phase2.sql`.
+- Projeto existente: aplique somente as migrações que ainda faltam, em ordem. Para v2.2.x, somente `202610220004_phase23.sql`; veja o roteiro 2.3.
 - Authentication → Sign In / Providers → Email: **Confirm Email desativado** nesta fase. Permita novos cadastros e use senha mínima de 8 caracteres.
 - Configure `NEXT_PUBLIC_AUTH_EMAIL_ENABLED=false`. Cadastro pede nome, e-mail e senha, encerra a sessão criada automaticamente pelo Supabase e mostra a tela Entrar com o e-mail preenchido. Recuperação por e-mail está desabilitada; alteração de senha autenticada permanece disponível.
 - Na Vercel, use a raiz com `package.json`, instalação `npm ci`, build `npm run build`, Node 24 LTS e saída padrão do Next.js.
@@ -46,16 +48,16 @@ Mantenha a validação de certificados habilitada. Se o certificado corporativo 
 
 Nunca envie `.env.local` ao Git. A chave pública é diferente da chave privada. Segredos não podem usar prefixo `NEXT_PUBLIC_`.
 
-## O que mudou na fase 2
+## Funcionalidades
 
-- Recorrências são preparadas automaticamente: em **Lançamentos → Para confirmar**, use **Recebi/Paguei**, ajuste valor/data ou pule uma ocorrência. O registro automático é opt-in, vale a partir de hoje e preserva o histórico pendente. Atualizar a página não duplica lançamentos.
-- Empréstimos e financiamentos de parcelas fixas: histórico anterior, pagamento vinculado a uma única despesa, progresso e estimativa de amortização. Juros mensais e CET têm campos distintos. O modelo estimado é Price, sem indexadores, atrasos ou taxas adicionais.
-- Nome no cadastro, saudação personalizada, perfil no avatar superior, logo levando à Visão geral e exclusão completa com senha atual.
-- Modais centralizados, listas e calendários próprios, máscara monetária BR, categorias sugeridas, datas após situação nas despesas e receitas manuais tratadas como recebidas.
-- Gráfico de receitas verde e despesas vermelho, CSV em português e download direto em Relatórios.
-- Mais cores/fundos, gradiente corrigido, tipografia revisada, novo símbolo `n + caminho + bússola`, animações e acessibilidade por teclado. Movimento reduzido respeita a opção do usuário no sistema.
-- Menu lateral com rolagem própria, rodapé com versão/copyright, indicador do Next oculto no desenvolvimento.
-- CSP de scripts com nonce por resposta, validação e autorização no servidor, RLS/FKs por dono, limite distribuído de escritas e corpo de requisição limitado em bytes.
+- Contas, receitas, despesas e recorrências. Confirmação Recebi/Paguei em Lançamentos; registro automático é opcional. Dinheiro guardado e VA/VR têm tratamento próprio.
+- Metas com aportes, conclusão e condições entre objetivos. Planejamento distribui o orçamento entre as metas disponíveis e explica as que aguardam.
+- **Cabe no meu bolso?**: compras e projetos em geral, preço desejado ou teto de gasto, à vista ou parcelado, entrada, custos de uso, folga mensal, juros, prazo para juntar e criação de meta.
+- Referências gratuitas de juros de veículos/imóveis pelo servidor do app, sem enviar dados pessoais ao provedor. Price/SAC, fonte/data e taxa manual como alternativa.
+- Empréstimos e financiamentos com parcelas fixas, histórico, pagamentos e simulação de amortização. Juros e CET são campos diferentes.
+- Tutorial por usuário, nome no cadastro, aviso de e-mail existente, alteração de senha autenticada e exclusão completa com verificação de senha.
+- Relatórios/CSV em português, tema escuro inicial, cores/fundos personalizados, fonte Geist local, modais/listas/calendários arredondados, máscara monetária BR, animações e navegação por teclado.
+- Autorização no servidor, RLS/vínculos por dono, integridade financeira no banco, CSP com nonce, limite de escritas e payload em bytes. Cache do PWA restrito a ativos públicos.
 
 ## Regras financeiras
 
@@ -76,6 +78,7 @@ Os testes cobrem domínio financeiro, RLS, regras de banco, Auth simulado, rotas
 
 ## Documentação
 
+- [Atualização 2.3 e roteiro de conferência](docs/FASE-2.3.md)
 - [Atualização e homologação da fase 2](docs/FASE-2.md)
 - [Controles e limites de segurança](docs/SEGURANCA.md)
 - [Validação](docs/VALIDACAO.md)

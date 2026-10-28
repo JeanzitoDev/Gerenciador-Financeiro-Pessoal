@@ -4,6 +4,7 @@ import { today, addMonths } from "./finance/dates";
 import { balance, goalFunded, reserved } from "./finance/engine";
 import { recurrenceDates } from "./finance/recurrence";
 import { schemas, profileSchema } from "./validation";
+import { validateGoalGraph } from "./finance/goal-dependencies";
 export const DEMO_USER = "00000000-0000-4000-8000-000000000001";
 const uid = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -245,6 +246,8 @@ export function demoData(): FinanceData {
     profile: {
       user_id: DEMO_USER,
       display_name: "Visitante",
+      onboarding_step: 4,
+      onboarding_completed_at: `${now}T12:00:00.000Z`,
       theme: "dark",
       accent: "violet",
       background: "gradient",
@@ -252,6 +255,7 @@ export function demoData(): FinanceData {
   };
 }
 export function validateDemo(data: FinanceData): void {
+  validateGoalGraph(data.goals);
   const asOf = today();
   for (const l of data.loans ?? []) {
     if (
@@ -349,19 +353,27 @@ export function mutateDemo(
         (e) => e.source_account_id === id || e.target_account_id === id,
       ) ||
         next.contributions.some((c) => c.account_id === id) ||
-        next.investments.some((i) => i.account_id === id) ||
         (next.loans ?? []).some((l) => l.account_id === id) ||
         next.recurrences.some(
           (r) => r.source_account_id === id || r.target_account_id === id,
         ))
     )
       throw new Error("A conta possui vínculos. Remova-os antes de excluir.");
+    if (entity === "accounts")
+      next.investments = next.investments.filter((i) => i.account_id !== id);
     if (entity === "loans" && next.transactions.some((e) => e.loan_id === id))
       throw new Error(
         "O contrato possui pagamentos nos Lançamentos. Remova os vínculos antes de excluir.",
       );
     if (entity === "goals" && next.contributions.some((c) => c.goal_id === id))
       throw new Error("Remova os aportes vinculados antes de excluir.");
+    if (
+      entity === "goals" &&
+      next.goals.some((g) => g.dependencies?.some((d) => d.goal_id === id))
+    )
+      throw new Error(
+        "Remova esta meta das condições das outras metas antes de excluir.",
+      );
     if (entity === "transactions" && rows[index].recurrence_id)
       rows[index].status = "cancelled";
     else rows.splice(index, 1);
@@ -473,7 +485,11 @@ export function generateDemo(data: FinanceData, from: string, until: string) {
 export function updateDemoProfile(data: FinanceData, payload: unknown) {
   return {
     ...data,
-    profile: { ...profileSchema.parse(payload), user_id: DEMO_USER },
+    profile: {
+      ...data.profile,
+      ...profileSchema.parse(payload),
+      user_id: DEMO_USER,
+    },
   };
 }
 

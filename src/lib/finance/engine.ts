@@ -1,6 +1,7 @@
 import type { Account, Contribution, Entry, FinanceData, Goal } from "../types";
 import { Decimal, checkedCents, sumCents } from "./money";
 import { daysBetween, inclusiveMonths } from "./dates";
+import { goalBlockers } from "./goal-dependencies";
 export function balance(
   account: Account,
   entries: Entry[],
@@ -103,14 +104,15 @@ export function planGoals(
   let remaining = budget;
   const rows = sorted.map((goal) => {
     const funded = goalFunded(goal.id, contributions);
-    const missing = Math.max(0, goal.target_cents - funded);
+    const blockers = goalBlockers(goal, goals, contributions);
+    const missing = goal.completed
+      ? 0
+      : Math.max(0, goal.target_cents - funded);
     const months = inclusiveMonths(asOf, goal.target_date);
     const required = checkedCents(new Decimal(missing).div(months).ceil());
-    const proposed = Math.min(
-      remaining,
-      required,
-      goal.monthly_budget_cents ?? required,
-    );
+    const proposed = blockers.length
+      ? 0
+      : Math.min(remaining, required, goal.monthly_budget_cents ?? required);
     remaining -= proposed;
     return {
       goal,
@@ -119,7 +121,8 @@ export function planGoals(
       months,
       required,
       proposed,
-      shortfall: required - proposed,
+      blockers,
+      shortfall: blockers.length ? 0 : required - proposed,
       overdue: goal.target_date < asOf && missing > 0,
     };
   });

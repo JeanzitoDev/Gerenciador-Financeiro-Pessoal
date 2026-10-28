@@ -1,4 +1,4 @@
-# Segurança do Meu Norte 2.0.0
+# Segurança do Meu Norte 2.3.1
 
 Referências: ISO/IEC 27001:2022 (gestão de riscos), ISO/IEC 27002:2022 (controles), documentação do Next.js, Supabase e Vercel. Este documento registra controles implementados e limites. **Não é declaração de conformidade, certificação ISO ou auditoria independente.**
 
@@ -41,3 +41,7 @@ Turnstile e backups automáticos foram adiados. A aplicação não depende de pl
 - https://supabase.com/docs/guides/database/postgres/row-level-security
 - https://supabase.com/docs/guides/auth/general-configuration
 - https://vercel.com/docs/vercel-firewall/ddos-mitigation
+
+## Acesso administrativo e criptografia
+
+RLS separa os registros entre usuários comuns; credenciais administrativas e o painel do projeto permitem consultar os dados financeiros. A 2.3.1 explicita isso no cadastro, na página `/privacidade` e nas preferências. Não há criptografia com chave exclusiva do usuário nesta versão. HTTPS e hashes de senha não cifram os lançamentos contra o administrador. A proposta de arquitetura, seus limites e critérios de migração estão em [USABILIDADE-E-PRIVACIDADE.md](USABILIDADE-E-PRIVACIDADE.md).

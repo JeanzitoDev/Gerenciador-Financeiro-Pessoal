@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowDownLeft,
@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   Wallet,
   Target,
-  ChartNoAxesCombined,
   CalendarClock,
   SlidersHorizontal,
   LogOut,
@@ -72,14 +71,14 @@ import {
   reserved,
   expenseCategories,
   planGoals,
-  project,
-  investmentReturn,
   type PlanningStrategy,
 } from "@/lib/finance/engine";
 import { exportEntries } from "@/lib/finance/csv";
 import RecordForm, { type FormState } from "./record-form";
 import FinanceChart from "./charts";
 import Simulator from "./simulator";
+import GettingStarted from "./getting-started";
+import { goalBlockers } from "@/lib/finance/goal-dependencies";
 import ConfirmDialog from "./confirm-dialog";
 import BrandMark from "./brand-mark";
 import PendingRecurrences from "./pending-recurrences";
@@ -96,7 +95,6 @@ type Screen =
   | "transactions"
   | "accounts"
   | "goals"
-  | "investments"
   | "loans"
   | "recurrences"
   | "planning"
@@ -108,24 +106,43 @@ const nav: { id: Screen; label: string; icon: LucideIcon }[] = [
   { id: "transactions", label: "Lançamentos", icon: ArrowLeftRight },
   { id: "accounts", label: "Minhas contas", icon: Wallet },
   { id: "goals", label: "Metas", icon: Target },
-  { id: "investments", label: "Investimentos", icon: ChartNoAxesCombined },
   { id: "loans", label: "Empréstimos e financiamentos", icon: Landmark },
   { id: "recurrences", label: "Recorrências", icon: CalendarClock },
   { id: "planning", label: "Planejamento", icon: Compass },
-  { id: "simulator", label: "Simulador", icon: Calculator },
+  { id: "simulator", label: "Cabe no meu bolso?", icon: Calculator },
   { id: "reports", label: "Relatórios", icon: FileChartColumn },
-  { id: "settings", label: "Preferências", icon: SlidersHorizontal },
 ];
+const screenLabel = (screen: Screen) =>
+  screen === "settings"
+    ? "Preferências"
+    : nav.find((n) => n.id === screen)?.label;
+
+function MenuCredits() {
+  return (
+    <div className="menu-credits">
+      <span>Meu Norte · v{APP_VERSION}</span>
+      <span>
+        © {new Date().getFullYear()}{" "}
+        <a
+          href="https://github.com/JeanzitoDev"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          JeanzitoDev
+        </a>
+      </span>
+    </div>
+  );
+}
 const descriptions: Record<Screen, string> = {
   overview: "Um olhar tranquilo para sua vida financeira.",
   transactions: "Cada movimento conta para o seu próximo passo.",
   accounts: "Seu dinheiro, em cada lugar.",
   goals: "Dê um destino aos seus planos.",
-  investments: "Acompanhe o que já rendeu. Imagine o que pode render.",
   recurrences: "O app lembra. Você só confirma.",
   loans: "Veja o que já pagou e o que falta.",
   planning: "Escolha o que vem primeiro.",
-  simulator: "Explore as possibilidades do seu dinheiro.",
+  simulator: "Veja como sua próxima conquista cabe no seu momento.",
   reports: "Transforme seus movimentos em clareza.",
   settings: "Deixe seu espaço com a sua cara.",
 };
@@ -133,7 +150,7 @@ const accountNames = {
   checking: "Conta corrente",
   cash: "Dinheiro",
   benefit: "Benefício",
-  investment: "Investimento",
+  investment: "Dinheiro guardado",
 };
 const accountIcons: Record<Account["kind"], LucideIcon> = {
   checking: Landmark,
@@ -231,11 +248,30 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
   const [search, setSearch] = useState(""),
     [kind, setKind] = useState("all"),
     [status, setStatus] = useState("all");
-  const [planBudget, setPlanBudget] = useState("1000,00"),
+  const [planBudget, setPlanBudget] = useState("0,00"),
     [strategy, setStrategy] = useState<PlanningStrategy>("date");
   const [profileMenu, setProfileMenu] = useState(false),
     [deletingAccount, setDeletingAccount] = useState(false),
     [accountFilter, setAccountFilter] = useState("");
+  const [savingOnboarding, setSavingOnboarding] = useState(false);
+  const [reportTarget, setReportTarget] = useState<
+    "categories" | "flow" | null
+  >(null);
+  const categoriesRef = useRef<HTMLElement>(null);
+  const flowRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (screen !== "reports" || !reportTarget) return;
+    const target =
+      reportTarget === "categories" ? categoriesRef.current : flowRef.current;
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : "smooth",
+      block: "start",
+    });
+    setReportTarget(null);
+  }, [screen, reportTarget]);
   const [preferenceDraft, setPreferenceDraft] = useState<{
       userId: string;
       changes: Partial<Omit<Profile, "user_id">>;
@@ -273,27 +309,33 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
       );
     return result;
   }, []);
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      let syncError = "";
+  const load = useCallback(
+    async ({ background = false } = {}) => {
       try {
-        await request("/api/recurrences/sync", { method: "POST", body: "{}" });
-      } catch {
-        syncError =
-          "Seus dados foram carregados, mas não foi possível atualizar os agendamentos. Tente atualizar novamente.";
+        if (!background) setLoading(true);
+        let syncError = "";
+        try {
+          await request("/api/recurrences/sync", {
+            method: "POST",
+            body: "{}",
+          });
+        } catch {
+          syncError =
+            "Seus dados foram carregados, mas não foi possível atualizar os agendamentos. Tente atualizar novamente.";
+        }
+        const result = await request("/api/data");
+        setData(result);
+        setError(syncError);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Não foi possível carregar.",
+        );
+      } finally {
+        if (!background) setLoading(false);
       }
-      const result = await request("/api/data");
-      setData(result);
-      setError(syncError);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Não foi possível carregar.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [request]);
+    },
+    [request],
+  );
   useEffect(() => {
     if (!demo) void load();
   }, [demo, load]);
@@ -304,9 +346,10 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
         document.visibilityState === "visible" &&
         !form &&
         !remove &&
-        !savingPrefs
+        !savingPrefs &&
+        !savingOnboarding
       )
-        void load();
+        void load({ background: true });
     };
     const timer = setInterval(refresh, 60000);
     window.addEventListener("focus", refresh);
@@ -314,7 +357,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
       clearInterval(timer);
       window.removeEventListener("focus", refresh);
     };
-  }, [demo, load, form, remove, savingPrefs]);
+  }, [demo, load, form, remove, savingPrefs, savingOnboarding]);
   useEffect(() => {
     const update = () => setOffline(!navigator.onLine);
     update();
@@ -350,7 +393,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
     return () => media.removeEventListener("change", update);
   }, [activePrefs?.theme, activePrefs?.accent, activePrefs?.background]);
   useEffect(() => {
-    document.title = `${nav.find((n) => n.id === screen)?.label} · Meu Norte`;
+    document.title = `${screenLabel(screen)} · Meu Norte`;
   }, [screen]);
   function go(next: Screen) {
     setScreen(next);
@@ -395,6 +438,17 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
             : current,
         );
       await load();
+    }
+    if (
+      entity === "contributions" &&
+      method === "POST" &&
+      form?.preset?.from_planning
+    ) {
+      setPlanBudget((current) =>
+        moneyInput(
+          Math.max(0, parseMoney(current) - Number(payload.amount_cents)),
+        ),
+      );
     }
     if (
       entity === "transactions" &&
@@ -515,6 +569,23 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
       };
     }
   })();
+  const availableAccounts = data.accounts
+    .filter((a) => a.kind !== "benefit")
+    .map((a) => ({
+      account: a,
+      available: Math.max(
+        0,
+        balance(a, data.transactions, asOf) -
+          reserved(a.id, data.contributions),
+      ),
+    }))
+    .sort((a, b) => b.available - a.available);
+  const onboardingStep = data.profile.onboarding_dismissed
+    ? 4
+    : data.profile.onboarding_step === 4 &&
+        !data.profile.onboarding_completed_at
+      ? 0
+      : (data.profile.onboarding_step ?? 0);
   function downloadCSV(entries: Entry[] = visibleEntries) {
     const blob = new Blob([exportEntries(entries, data!.accounts)], {
       type: "text/csv;charset=utf-8;",
@@ -586,6 +657,40 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
     }
     setToast("Parcela paga e registrada nos Lançamentos.");
   }
+  async function setOnboarding(step: number, dismissed = false) {
+    setSavingOnboarding(true);
+    try {
+      const result = demo
+        ? {
+            completed_at:
+              step === 4 && !dismissed ? new Date().toISOString() : null,
+          }
+        : await request("/api/onboarding", {
+            method: "PUT",
+            body: JSON.stringify({ step, dismissed }),
+          });
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              profile: {
+                ...current.profile,
+                onboarding_step: step,
+                onboarding_dismissed: dismissed,
+                onboarding_completed_at: result.completed_at,
+              },
+            }
+          : current,
+      );
+      if (step === 0 && !dismissed) go("overview");
+    } catch (e) {
+      setToast(
+        e instanceof Error ? e.message : "Não foi possível salvar a etapa.",
+      );
+    } finally {
+      setSavingOnboarding(false);
+    }
+  }
   async function logout() {
     try {
       await request("/api/auth", {
@@ -635,11 +740,6 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
               label: "Aportes vinculados às metas",
               onClick: () => go("goals"),
             });
-          if (data.investments.some((i) => i.account_id === id))
-            links.push({
-              label: "Investimento desta conta",
-              onClick: () => go("investments"),
-            });
           if (
             data.recurrences.some(
               (r) => r.source_account_id === id || r.target_account_id === id,
@@ -675,6 +775,14 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
         )
           links.push({
             label: "Aportes desta meta",
+            onClick: () => go("goals"),
+          });
+        if (
+          remove.entity === "goals" &&
+          data.goals.some((g) => g.dependencies?.some((d) => d.goal_id === id))
+        )
+          links.push({
+            label: "Metas que dependem desta",
             onClick: () => go("goals"),
           });
         return links;
@@ -774,6 +882,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
     const funded = goalFunded(goal.id, data!.contributions),
       progress = Math.min(100, (funded / goal.target_cents) * 100),
       remaining = Math.max(0, goal.target_cents - funded);
+    const blockers = goalBlockers(goal, data!.goals, data!.contributions);
     return (
       <article className="goal-card" key={goal.id}>
         <div className="goal-card-head">
@@ -787,9 +896,21 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
           />
         </div>
         <h3>{goal.name}</h3>
+        {goal.completed ? (
+          <span className="badge success">Concluída</span>
+        ) : blockers.length > 0 ? (
+          <div className="goal-waiting">
+            <span className="badge warning">Um passo antes</span>
+            {blockers.map((reason) => (
+              <p key={reason}>{reason}</p>
+            ))}
+          </div>
+        ) : goal.dependencies?.length ? (
+          <span className="badge success">Condições atendidas</span>
+        ) : null}
         <p className="goal-date">
           Até {formatDate(goal.target_date)}
-          {goal.target_date < asOf && remaining > 0 && (
+          {!goal.completed && goal.target_date < asOf && remaining > 0 && (
             <span className="badge warning">Prazo vencido</span>
           )}
         </p>
@@ -808,16 +929,30 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
           <div style={{ width: `${progress}%` }} />
         </div>
         <div className="goal-progress-label">
-          <span>{Math.round(progress)}% do caminho</span>
-          <span>Faltam {value(remaining)}</span>
+          <span>
+            {goal.completed
+              ? "Objetivo concluído"
+              : `${Math.round(progress)}% do caminho`}
+          </span>
+          <span>
+            {goal.completed
+              ? `Reservado ${value(funded)}`
+              : `Faltam ${value(remaining)}`}
+          </span>
         </div>
         <button
           className="button secondary wide"
           onClick={() => newRecord("contributions", { goal_id: goal.id })}
-          disabled={remaining === 0}
+          disabled={remaining === 0 || goal.completed}
         >
           <Plus size={16} />
-          {remaining === 0 ? "Meta alcançada" : "Reservar um aporte"}
+          {goal.completed
+            ? "Meta concluída"
+            : remaining === 0
+              ? "Meta alcançada"
+              : blockers.length
+                ? "Reservar mesmo assim"
+                : "Reservar um aporte"}
         </button>
       </article>
     );
@@ -854,9 +989,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
             </button>
           ))}
         </nav>
-        <div className="sidebar-version">
-          Meu Norte <span>v{APP_VERSION}</span>
-        </div>
+        <MenuCredits />
       </aside>
       <div className="main-shell">
         {demo && (
@@ -923,6 +1056,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   >
                     Perfil e preferências
                   </button>
+                  <Link href="/privacidade">Privacidade dos dados</Link>
                   {!demo && (
                     <>
                       <Link href="/nova-senha">Alterar senha</Link>
@@ -942,17 +1076,12 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
         <main key={screen} id="main-content" className="app-main" tabIndex={-1}>
           <div className="page-heading">
             <div>
-              <p className="eyebrow">
-                {screen === "overview"
-                  ? `BEM-VINDO${data.profile.display_name ? ", " + data.profile.display_name.toLocaleUpperCase("pt-BR") : ""}`
-                  : "SEU ESPAÇO FINANCEIRO"}
-              </p>
               <h1>
                 {screen === "overview"
                   ? data.profile.display_name
                     ? `Olá, ${data.profile.display_name.split(" ")[0]}!`
                     : "Seu dinheiro, com direção."
-                  : nav.find((n) => n.id === screen)?.label}
+                  : screenLabel(screen)}
               </h1>
               <p>{descriptions[screen]}</p>
             </div>
@@ -979,6 +1108,26 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
               </button>
             </div>
           )}
+          <GettingStarted
+            step={onboardingStep}
+            busy={savingOnboarding}
+            hasAccounts={data.accounts.length > 0}
+            onStep={(step) => void setOnboarding(step)}
+            onDismiss={() => void setOnboarding(onboardingStep, true)}
+            onAction={() => {
+              const step = onboardingStep;
+              if (step === 0) {
+                go("accounts");
+                newRecord("accounts");
+              } else if (step === 1) {
+                go("recurrences");
+                newRecord("recurrences");
+              } else if (step === 2) {
+                go("loans");
+                newRecord("loans");
+              } else go("transactions");
+            }}
+          />
           {screen === "overview" && (
             <>
               <div className="summary-grid">
@@ -991,8 +1140,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   </div>
                   <strong className="hero-value">{value(stats.free)}</strong>
                   <p>
-                    Seu saldo em contas e aplicações, descontando o reservado
-                    para metas.
+                    Seu saldo nas contas, descontando o reservado para metas.
                   </p>
                   <div className="hero-footer">
                     <span>
@@ -1054,10 +1202,14 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                       <p>Receitas e despesas · últimos 6 meses</p>
                     </div>
                     <button
-                      className="icon-button"
+                      className="panel-link"
                       aria-label="Ver relatórios"
-                      onClick={() => go("reports")}
+                      onClick={() => {
+                        go("reports");
+                        setReportTarget("flow");
+                      }}
                     >
+                      <span>Ver fluxo</span>
                       <ArrowUpRight size={20} />
                     </button>
                   </div>
@@ -1075,9 +1227,17 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                       <h2>Para onde foi?</h2>
                       <p>Despesas de {monthLabel(month)}</p>
                     </div>
-                    <span className="square-icon subtle">
+                    <button
+                      className="panel-link"
+                      aria-label="Ver todas as categorias"
+                      onClick={() => {
+                        go("reports");
+                        setReportTarget("categories");
+                      }}
+                    >
+                      <span>Ver categorias</span>
                       <ArrowUpRight size={19} />
-                    </span>
+                    </button>
                   </div>
                   {categories.length ? (
                     <div className="category-list">
@@ -1099,13 +1259,6 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                           </div>
                         </div>
                       ))}
-                      <button
-                        className="text-button"
-                        onClick={() => go("reports")}
-                      >
-                        Ver todas as categorias
-                        <ArrowRight size={15} />
-                      </button>
                     </div>
                   ) : (
                     <Empty
@@ -1408,186 +1561,6 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
               </section>
             </>
           )}
-          {screen === "investments" && (
-            <>
-              <div className="toolbar">
-                <p className="muted">
-                  Valores realizados e cenários futuros, sempre separados.
-                </p>
-                <button
-                  className="button primary"
-                  onClick={() => newRecord("investments")}
-                >
-                  <Plus size={17} />
-                  Configurar investimento
-                </button>
-              </div>
-              <p className="info-box">
-                <Info size={18} />
-                <span>
-                  Crie uma conta do tipo investimento, configure-a abaixo e use
-                  transferências para aplicar ou resgatar. Rendimentos são
-                  informados manualmente.
-                </span>
-              </p>
-              {data.investments.length ? (
-                <div className="investments-grid">
-                  {data.investments.map((i) => {
-                    const account = data.accounts.find(
-                      (a) => a.id === i.account_id,
-                    )!;
-                    const result = investmentReturn(
-                      account,
-                      data.transactions,
-                      asOf,
-                      i.inflation_rate,
-                    );
-                    const forecast = (() => {
-                      try {
-                        return project(
-                          result.final,
-                          0,
-                          12,
-                          i.annual_rate,
-                          i.inflation_rate,
-                        ).at(-1)!;
-                      } catch {
-                        return null;
-                      }
-                    })();
-                    return (
-                      <article className="panel investment-card" key={i.id}>
-                        <div className="section-head">
-                          <span className="square-icon">
-                            <TrendingUp size={23} />
-                          </span>
-                          <Actions
-                            label={i.name}
-                            onEdit={() => edit("investments", i)}
-                            onDelete={() => askDelete("investments", i, i.name)}
-                          />
-                        </div>
-                        <p className="eyebrow">{account.name}</p>
-                        <h2>{i.name}</h2>
-                        <strong className="account-balance">
-                          {value(result.final)}
-                        </strong>
-                        <span className="badge success">Saldo realizado</span>
-                        <div className="investment-results">
-                          <div>
-                            <span>Ganho realizado</span>
-                            <strong
-                              className={
-                                result.gain >= 0 ? "positive" : "negative"
-                              }
-                            >
-                              {value(result.gain)}
-                            </strong>
-                          </div>
-                          <div>
-                            <span>Rendimento antes da inflação¹</span>
-                            <strong>{percent(result.nominal)}</strong>
-                          </div>
-                          <div>
-                            <span>Rendimento após a inflação²</span>
-                            <strong>{percent(result.real)}</strong>
-                          </div>
-                        </div>
-                        <div className="investment-premises">
-                          <span>
-                            Projeção{" "}
-                            <strong>{percent(i.annual_rate)} a.a.</strong>
-                          </span>
-                          <span>
-                            Inflação usada na simulação{" "}
-                            <strong>{percent(i.inflation_rate)} a.a.</strong>
-                          </span>
-                        </div>
-                        <div className="investment-forecast">
-                          <span className="eyebrow">
-                            CENÁRIO DE 12 MESES · SEM NOVOS APORTES
-                          </span>
-                          {forecast ? (
-                            <>
-                              <div>
-                                <span>Saldo nominal projetado</span>
-                                <strong>{value(forecast.total)}</strong>
-                              </div>
-                              <div>
-                                <span>Valor real (poder de compra)</span>
-                                <strong>{value(forecast.real)}</strong>
-                              </div>
-                            </>
-                          ) : (
-                            <p>Projeção excede o limite de cálculo.</p>
-                          )}
-                        </div>
-                        <p className="small-note">
-                          Desde {formatDate(account.opening_date)}. ¹ Estimativa
-                          que considera aportes e resgates. ² Desconta a
-                          inflação escolhida pelo período. Não inclui impostos
-                          ou cotações automáticas.
-                        </p>
-                        <div className="button-row">
-                          <button
-                            className="button secondary"
-                            onClick={() =>
-                              newRecord("transactions", {
-                                kind: "transfer",
-                                target_account_id: account.id,
-                              })
-                            }
-                          >
-                            <ArrowLeftRight size={16} />
-                            Aplicar / resgatar
-                          </button>
-                          <button
-                            className="button primary"
-                            onClick={() =>
-                              newRecord("transactions", {
-                                kind: "yield",
-                                target_account_id: account.id,
-                                category: "Rendimentos",
-                              })
-                            }
-                          >
-                            Rendimento
-                            <Plus size={16} />
-                          </button>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              ) : (
-                <section className="panel">
-                  <Empty
-                    icon={TrendingUp}
-                    title="Acompanhe seu dinheiro crescendo"
-                    text="Cadastre uma conta de investimento e configure suas hipóteses."
-                    action={() => newRecord("accounts", { kind: "investment" })}
-                    label="Criar conta de investimento"
-                  />
-                </section>
-              )}
-              <section className="callout">
-                <span className="square-icon">
-                  <Calculator size={23} />
-                </span>
-                <div>
-                  <h3>E se você investisse um pouco todo mês?</h3>
-                  <p>Veja cenários com juros compostos e inflação.</p>
-                </div>
-                <button
-                  className="button secondary"
-                  onClick={() => go("simulator")}
-                >
-                  Abrir simulador
-                  <ArrowRight size={17} />
-                </button>
-              </section>
-            </>
-          )}
           {screen === "loans" && (
             <LoansSection
               data={data}
@@ -1706,14 +1679,17 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
               <section className="panel">
                 <div className="section-head">
                   <div>
-                    <h2>Um plano possível para este mês</h2>
-                    <p>Diga quanto pode separar e escolha suas prioridades.</p>
+                    <h2>Onde colocar meu próximo dinheiro?</h2>
+                    <p>
+                      Escolha um valor, veja o que vem primeiro e reserve para
+                      suas metas.
+                    </p>
                   </div>
                   <Compass size={24} />
                 </div>
                 <div className="planning-controls">
                   <label className="form-field">
-                    <span>Quanto posso separar por mês? (R$)</span>
+                    <span>Quanto ainda quero separar neste mês? (R$)</span>
                     <MoneyInput
                       value={planBudget}
                       onValueChange={setPlanBudget}
@@ -1734,13 +1710,26 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     />
                   </div>
                 </div>
+                <div className="planning-available">
+                  <p>
+                    Dinheiro livre hoje <strong>{value(stats.free)}</strong>
+                  </p>
+                  <button
+                    className="button secondary"
+                    onClick={() =>
+                      setPlanBudget(moneyInput(Math.max(0, stats.free)))
+                    }
+                  >
+                    Usar saldo livre
+                  </button>
+                </div>
                 <p className="info-box">
                   <Info size={18} />
                   <span>
-                    Essa sugestão usa o valor que você informou. Para separar o
-                    dinheiro de verdade, registre um aporte com saldo
-                    disponível. Contamos este mês como a primeira parcela do seu
-                    plano.
+                    O saldo livre ainda pode ser necessário para suas próximas
+                    contas. Escolha quanto pode guardar sem apertar o mês. Você
+                    revisa cada aporte antes de salvar; ao reservar por aqui,
+                    esse valor sai do orçamento deste plano.
                   </span>
                 </p>
                 {planning.error && (
@@ -1750,48 +1739,173 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                 )}
                 {planning.data && (
                   <>
-                    <div className="table-scroll">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Meta</th>
-                            <th>Prazo</th>
-                            <th>Falta</th>
-                            <th>Precisa por mês</th>
-                            <th>Sugestão</th>
-                            <th>Falta por mês</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {planning.data.rows.map((r) => (
-                            <tr key={r.goal.id}>
-                              <td>
-                                <strong>{r.goal.name}</strong>
-                                {r.overdue && (
-                                  <span className="badge warning">Vencida</span>
+                    <div className="planning-actions">
+                      {planning.data.rows.map((r) => {
+                        const source = availableAccounts[0];
+                        const amount = Math.min(
+                          r.proposed,
+                          source?.available ?? 0,
+                        );
+                        return (
+                          <article
+                            className="planning-action"
+                            key={r.goal.id}
+                            aria-label={`Plano para ${r.goal.name}`}
+                          >
+                            <div className="section-head">
+                              <h3>{r.goal.name}</h3>
+                              <span
+                                className={`badge ${r.blockers.length ? "warning" : r.missing === 0 ? "success" : ""}`}
+                              >
+                                {r.blockers.length
+                                  ? "Antes, cuide das condições"
+                                  : r.missing === 0
+                                    ? "Tudo reservado"
+                                    : "Próximo passo"}
+                              </span>
+                            </div>
+                            {r.blockers.length ? (
+                              <>
+                                <p>Esta meta espera:</p>
+                                <ul>
+                                  {r.blockers.map((reason) => (
+                                    <li key={reason}>{reason}</li>
+                                  ))}
+                                </ul>
+                                <button
+                                  className="button secondary"
+                                  onClick={() => edit("goals", r.goal)}
+                                >
+                                  Revisar condições de {r.goal.name}
+                                </button>
+                              </>
+                            ) : r.missing === 0 ? (
+                              <p>
+                                {r.goal.completed
+                                  ? "Você marcou esta meta como concluída."
+                                  : "O valor da meta já está reservado."}
+                              </p>
+                            ) : (
+                              <>
+                                <p>
+                                  Sugestão para agora{" "}
+                                  <strong className="planning-amount">
+                                    {value(r.proposed)}
+                                  </strong>
+                                </p>
+                                <p>
+                                  Para chegar no prazo: {value(r.required)} por
+                                  mês.{" "}
+                                  {r.overdue
+                                    ? "A data passou; vale revisar seu prazo."
+                                    : `Faltam ${value(r.missing)} para esta meta.`}
+                                </p>
+                                {r.proposed === 0 && (
+                                  <p className="small-note">
+                                    Informe um valor para o plano ou ajuste a
+                                    prioridade desta meta.
+                                  </p>
                                 )}
-                              </td>
-                              <td>
-                                {r.months} {r.months === 1 ? "mês" : "meses"}
-                              </td>
-                              <td>{value(r.missing)}</td>
-                              <td>{value(r.required)}</td>
-                              <td className="positive">{value(r.proposed)}</td>
-                              <td className={r.shortfall ? "negative" : ""}>
-                                {value(r.shortfall)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                                {r.proposed > 0 && amount === 0 && (
+                                  <p className="small-note">
+                                    Não há saldo livre em uma conta para
+                                    reservar agora. Confira seus saldos em
+                                    Minhas contas.
+                                  </p>
+                                )}
+                                {amount > 0 && amount < r.proposed && (
+                                  <p className="small-note">
+                                    Vamos começar com {value(amount)},
+                                    disponível em {source.account.name}. O
+                                    restante pode vir de outra conta.
+                                  </p>
+                                )}
+                                <button
+                                  className="button primary"
+                                  disabled={amount <= 0}
+                                  aria-label={`Revisar e reservar para ${r.goal.name}`}
+                                  onClick={() =>
+                                    newRecord("contributions", {
+                                      goal_id: r.goal.id,
+                                      account_id: source.account.id,
+                                      amount_cents: amount,
+                                      date: today(),
+                                      from_planning: true,
+                                    })
+                                  }
+                                >
+                                  Revisar e reservar <ArrowRight size={16} />
+                                </button>
+                              </>
+                            )}
+                          </article>
+                        );
+                      })}
                     </div>
+                    <details className="planning-details">
+                      <summary>Ver as contas do plano</summary>
+                      <div className="table-scroll">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Meta</th>
+                              <th>Prazo</th>
+                              <th>Falta</th>
+                              <th>Precisa por mês</th>
+                              <th>Sugestão</th>
+                              <th>Falta por mês</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {planning.data.rows.map((r) => (
+                              <tr key={r.goal.id}>
+                                <td>
+                                  <strong>{r.goal.name}</strong>
+                                  {r.goal.completed && (
+                                    <span className="badge success">
+                                      Concluída
+                                    </span>
+                                  )}
+                                  {r.blockers.length > 0 && (
+                                    <div className="goal-waiting">
+                                      <span className="badge warning">
+                                        Aguardando condições
+                                      </span>
+                                      {r.blockers.map((reason) => (
+                                        <p key={reason}>{reason}</p>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {r.overdue && (
+                                    <span className="badge warning">
+                                      Vencida
+                                    </span>
+                                  )}
+                                </td>
+                                <td>
+                                  {r.months} {r.months === 1 ? "mês" : "meses"}
+                                </td>
+                                <td>{value(r.missing)}</td>
+                                <td>{value(r.required)}</td>
+                                <td className="positive">
+                                  {value(r.proposed)}
+                                </td>
+                                <td className={r.shortfall ? "negative" : ""}>
+                                  {value(r.shortfall)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
                     <div className="planning-totals">
                       <span>
-                        Sobra do orçamento
+                        Ainda sem destino neste plano
                         <strong>{value(planning.data.remaining)}</strong>
                       </span>
                       <span>
-                        Quanto ainda falta por mês
+                        Falta por mês nas metas liberadas
                         <strong
                           className={
                             planning.data.shortfall ? "negative" : "positive"
@@ -1831,7 +1945,12 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
               </section>
             </>
           )}
-          {screen === "simulator" && <Simulator />}
+          {screen === "simulator" && (
+            <Simulator
+              data={data}
+              onCreateGoal={(preset) => newRecord("goals", preset)}
+            />
+          )}
           {screen === "reports" && (
             <>
               <div className="report-stats">
@@ -1856,7 +1975,12 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                 </section>
               </div>
               <div className="two-column">
-                <section className="panel">
+                <section
+                  className="panel scroll-destination"
+                  ref={flowRef}
+                  tabIndex={-1}
+                  aria-label="Evolução do caixa"
+                >
                   <div className="section-head">
                     <div>
                       <h2>Evolução do caixa</h2>
@@ -1870,7 +1994,12 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     secondary={periods.map((p) => p.expense)}
                   />
                 </section>
-                <section className="panel">
+                <section
+                  className="panel scroll-destination"
+                  ref={categoriesRef}
+                  tabIndex={-1}
+                  aria-label="Composição das despesas"
+                >
                   <h2>Composição das despesas</h2>
                   <div className="category-list">
                     {categories.map((c, i) => (
@@ -1929,7 +2058,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   </table>
                 </div>
                 <p className="small-note">
-                  Rendimentos de investimentos são exibidos em Investimentos.
+                  Rendimentos recebidos podem ser registrados nos Lançamentos.
                   Previsto e cancelado não compõem estes totais. Patrimônio
                   atual: {value(stats.assets)} · VA/VR: {value(stats.benefits)}.
                 </p>
@@ -1945,6 +2074,41 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
           )}
           {screen === "settings" && preferences && (
             <div className="settings-layout">
+              <section className="panel onboarding-help">
+                <h2>Primeiros passos</h2>
+                <p>
+                  Revise a ordem para organizar contas, recorrências, contratos
+                  e lançamentos.
+                </p>
+                <button
+                  className="button secondary"
+                  disabled={savingOnboarding}
+                  onClick={() =>
+                    void setOnboarding(
+                      (data.profile.onboarding_step ?? 4) < 4
+                        ? data.profile.onboarding_step!
+                        : 0,
+                    )
+                  }
+                >
+                  Ver tutorial inicial
+                </button>
+              </section>
+              <section
+                className="panel privacy-notice"
+                aria-label="Privacidade dos seus dados"
+              >
+                <h2>Quem pode ver meus dados?</h2>
+                <p>
+                  Outros usuários não podem consultar seus registros pelas
+                  permissões do app. O administrador do projeto tem acesso
+                  técnico aos dados no banco. Esta versão ainda não possui
+                  criptografia com chave exclusiva sua.
+                </p>
+                <Link className="text-button" href="/privacidade">
+                  Entender a privacidade dos dados <ArrowRight size={16} />
+                </Link>
+              </section>
               <section className="panel">
                 <div className="section-head">
                   <div>
@@ -2184,21 +2348,6 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
               </div>
             </div>
           )}
-          <footer className="app-footer">
-            <span>
-              <BrandMark size={20} /> Meu Norte · v{APP_VERSION}
-            </span>
-            <span>
-              © {new Date().getFullYear()}{" "}
-              <a
-                href="https://github.com/JeanzitoDev"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                JeanzitoDev
-              </a>
-            </span>
-          </footer>
         </main>
       </div>
       {deletingAccount && (
@@ -2251,6 +2400,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
               </button>
             ))}
           </nav>
+          <MenuCredits />
         </MobileSheet>
       )}
       {form && (

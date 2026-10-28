@@ -139,3 +139,32 @@ describe("cadastro sem confirmação da fase 2", () => {
     expect(client.auth.resetPasswordForEmail).not.toHaveBeenCalled();
   });
 });
+
+describe("cadastro duplicado", () => {
+  it.each(["user_already_exists", "email_exists"])(
+    "explica o e-mail existente quando o Auth retorna %s",
+    async (code) => {
+      client.auth.signUp.mockResolvedValueOnce({
+        data: null,
+        error: { code, status: 422, name: "AuthApiError" },
+      });
+      const response = await POST(
+        new Request("http://localhost:3000/api/auth", {
+          method: "POST",
+          headers: { origin: "http://localhost:3000" },
+          body: JSON.stringify({
+            action: "signup",
+            display_name: "Jean",
+            email: "teste@example.com",
+            password: "12345678",
+          }),
+        }),
+      );
+      expect(response.status).toBe(409);
+      expect((await response.json()).error).toBe(
+        "Já existe uma conta com esse e-mail. Entre para continuar.",
+      );
+      expect(client.auth.signOut).not.toHaveBeenCalled();
+    },
+  );
+});

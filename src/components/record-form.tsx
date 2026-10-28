@@ -1,13 +1,18 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { X, ArrowRight, Info } from "lucide-react";
-import type { Entity, FinanceData } from "@/lib/types";
+import type { Entity, FinanceData, GoalDependency } from "@/lib/types";
+import GoalConditions, {
+  draftConditions,
+  parseConditions,
+} from "./goal-conditions";
 import { moneyInput, parseMoney } from "@/lib/finance/money";
 import DateControl from "./date-control";
 import SelectControl from "./select-control";
 import CategoryInput from "./category-input";
 import MoneyInput from "./money-input";
 import { today } from "@/lib/finance/dates";
+import { goalBlockers } from "@/lib/finance/goal-dependencies";
 export type FormState = {
   entity: Entity;
   record?: Record<string, unknown>;
@@ -32,7 +37,7 @@ const accountKinds = [
   ["checking", "Conta corrente"],
   ["cash", "Dinheiro"],
   ["benefit", "Benefícios · VA/VR"],
-  ["investment", "Investimento"],
+  ["investment", "Dinheiro guardado"],
 ];
 const emptyDefaults = {
   name: "",
@@ -51,6 +56,7 @@ const emptyDefaults = {
   target_cents: "",
   target_date: "",
   priority: "1",
+  completed: "false",
   monthly_budget_cents: "",
   goal_id: "",
   account_id: "",
@@ -96,6 +102,11 @@ export default function RecordForm({
     payload: Record<string, unknown>,
   ) => Promise<void>;
 }) {
+  const [conditions, setConditions] = useState(() =>
+    draftConditions(
+      (state.record?.dependencies as GoalDependency[] | undefined) ?? [],
+    ),
+  );
   const [values, setValues] = useState<Record<string, string>>(() => {
     const row = { ...state.record, ...state.preset },
       base = {
@@ -270,6 +281,8 @@ export default function RecordForm({
             target_date: v.target_date,
             priority: Number(v.priority),
             monthly_budget_cents: money("monthly_budget_cents", true),
+            completed: v.completed === "true",
+            dependencies: parseConditions(conditions),
           };
           break;
         case "contributions":
@@ -603,6 +616,26 @@ export default function RecordForm({
                   hint: "Vazio = sem teto no planejamento.",
                 })}
               </div>
+              <label className="checkbox-field">
+                <input
+                  type="checkbox"
+                  checked={values.completed === "true"}
+                  onChange={(event) =>
+                    update("completed", String(event.target.checked))
+                  }
+                />
+                <span>Esta meta já foi concluída</span>
+              </label>
+              <p className="form-help">
+                Marque quando o objetivo acontecer, como finalizar a mudança. O
+                saldo reservado continua visível para você administrar.
+              </p>
+              <GoalConditions
+                goals={data.goals}
+                goalId={state.record?.id as string | undefined}
+                value={conditions}
+                onChange={setConditions}
+              />
             </>
           )}
           {e === "contributions" && (
@@ -612,6 +645,18 @@ export default function RecordForm({
                 "Meta",
                 data.goals.map((g) => [g.id, g.name]),
               )}
+              {(() => {
+                const goal = data.goals.find((g) => g.id === values.goal_id);
+                const blockers = goal
+                  ? goalBlockers(goal, data.goals, data.contributions)
+                  : [];
+                return blockers.length ? (
+                  <p className="info-box">
+                    No Planejamento, esta meta aguarda: {blockers.join("; ")}.
+                    Você está escolhendo fazer um aporte manual mesmo assim.
+                  </p>
+                ) : null;
+              })()}
               {select(
                 "account_id",
                 "Conta com o recurso",

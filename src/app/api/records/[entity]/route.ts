@@ -64,6 +64,25 @@ async function mutate(
       if (!data.length) throw new ApiError(404, "Registro não encontrado.");
       return json({ ok: true });
     }
+    // Older deployed clients must not erase the new goal conditions when editing a name/date.
+    if (
+      entity === "goals" &&
+      method === "PUT" &&
+      (!Object.hasOwn(body, "dependencies") ||
+        !Object.hasOwn(body, "completed"))
+    ) {
+      const { data: current, error } = await supabase
+        .from("goals")
+        .select("dependencies,completed")
+        .eq("id", id!)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (error) throw databaseError(error);
+      if (!current) throw new ApiError(404, "Registro não encontrado.");
+      if (!Object.hasOwn(body, "dependencies"))
+        body.dependencies = current.dependencies;
+      if (!Object.hasOwn(body, "completed")) body.completed = current.completed;
+    }
     const parsed = schemas[entity].safeParse(body);
     if (!parsed.success)
       throw new ApiError(

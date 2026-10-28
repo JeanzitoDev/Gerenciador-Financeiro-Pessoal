@@ -1,38 +1,57 @@
-# Validação · Meu Norte 2.2.0
+# Validação · Meu Norte 2.3.1
 
-Base desta revisão: Meu Norte 2.1.1, commit `e347196`.
+Base local: v2.3.0, commit `6d183ba`. O `origin/main` foi conferido em `82a24d7` (v2.2.0); esta entrega parte do código 2.3.0 entregue anteriormente, preservando as alterações intermediárias.
 
 ## Resultado local
 
-- `npm run check`: **136 testes em 12 arquivos aprovados**, geração de tipos, TypeScript e build de produção aprovados.
-- Node.js **24.19.0** e Next.js **16.4.2**. Dependências NPM preservadas; nenhuma dependência de serviço pago adicionada.
-- Geist variável servida pelo próprio app. Arquivo de fonte validado, eixo de peso 100–900 e caracteres acentuados de pt-BR presentes. Licença SIL OFL incluída.
-- `git diff --check` sem erros. Build realizado sem credenciais remotas.
+- `npm test`: **171 testes em 15 arquivos aprovados**.
+- `npm run typecheck`: geração de tipos e TypeScript aprovados.
+- `npm run build`: produção compilada, incluindo a nova rota pública `/privacidade`.
+- Node.js 24.19.0 e Next.js 16.4.2; nenhuma dependência nova ou serviço pago adicionado.
+- PostgreSQL local com todas as migrations anteriores e dados existentes: saldos preservados, guia reaberto nas contas antigas e conclusões com marcador mantidas, inclusive ao reaplicar a migration nova.
+- `git diff --check` sem erros.
 
-## Cobertura
+## Evidência específica da 2.3.1
 
-| Camada                   | Verificação                                                                                                                                                                                                        |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Dinheiro e domínio       | Centavos/Decimal, formatos BR, reservas, projeções, juros, parcelas e amortização; máscara com milhares, centavos incompletos e preservação de valores acima do limite para validação                              |
-| Interface monetária      | Digitação e edição no meio do valor, centavos ao sair do campo, valores iniciais formatados, simulador com milhar e resultado conferido                                                                            |
-| Preferências e navegação | Escuro padrão no demo, cor/fundo pelo seletor comum, manutenção da aparência durante CRUD e atualizações, ausência do breadcrumb e rolagem suave com alternativa para redução de movimento                         |
-| Calendários e listas     | Escolha de mês/ano/dia com componente comum, teclado e Esc, retorno do foco, geometria controlada do calendário em coluna direita do modal                                                                         |
-| Pagamento adiantado      | Criar regra futura, mudar para Já paguei, usar a data real, exibir Pago adiantado, acompanhar mês/filtro e manter uma ocorrência ao navegar novamente                                                              |
-| Receita recorrente       | Editar um item pendente conserva sua situação; Já recebi confirma e passa a data para hoje                                                                                                                         |
-| HTTP de confirmação      | Recusa data de pagamento futura, permite antecipação com data real até hoje, usa hoje na ausência de data e mantém confirmação idempotente e vinculada ao dono                                                     |
-| Atualização dos dados    | Edição aceita permanece confirmada e os dados ainda são lidos quando a sincronização de recorrências retorna erro                                                                                                  |
-| PostgreSQL local         | Migrações inicial, fase 2 e fase 2.2; novos perfis escuros sem alterar os existentes; pagamento antecipado debita uma vez e não volta a previsto; RLS, vínculos, saldos, limites, contratos e exclusão preservados |
-| CSV                      | Tipo/situação em português, data BR, valores com vírgula e neutralização de fórmulas; classificação de pagamento antecipado                                                                                        |
-| Segurança/PWA            | Origem, autenticação, permissões, limite de corpo e orçamento de escrita; CSP com nonce; cache restrito a ativos públicos, agora incluindo a fonte local                                                           |
+| Área                | Verificação                                                                                                                                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tutorial            | Conta existente com marcação antiga recebe o guia; percorre etapas, conclui e não o vê novamente depois de recarregar; o fluxo anterior de adiar/retomar continua aprovado                                                            |
+| Persistência        | API salva conclusão com horário do servidor, descarta data/dono fornecidos pelo cliente; origem inválida e etapa inválida continuam recusadas                                                                                         |
+| Migração            | Perfis antigos são reiniciados sem mexer em saldos; etapas em andamento preservadas; conclusão real não é apagada ao reaplicar; RLS isola perfis                                                                                      |
+| Planejamento        | Orçamento abre aporte com valor e conta; cancelar mantém o orçamento; salvar reserva o valor e desconta do plano; condições das metas continuam impedindo sugestões                                                                   |
+| Navegação           | Categorias e fluxo abrem a seção certa dos Relatórios com foco; preferências acessíveis só pelo avatar; título único e créditos fora do conteúdo da página                                                                            |
+| Simulador           | Cálculo válido move foco ao resultado e pede rolagem suave; movimento reduzido usa rolagem imediata; criação da meta preservada sem aporte automático                                                                                 |
+| Aparência           | CSS compartilha padrão e cor entre espaço e cartão, sem lista de gradientes limitada a quatro cores; brilho decorativo da landing não captura eventos de ponteiro                                                                     |
+| Contraste do cartão | Cálculo sRGB conservador para 8 cores × 2 temas × 6 fundos: menor contraste estimado do texto do cartão 4,81:1, incluindo sobreposição máxima das camadas e fundo do selo. Não equivale a auditoria visual completa de acessibilidade |
+| Transparência       | Avisos no cadastro, avatar, preferências e página pública explicam que o administrador tem acesso técnico; nenhuma promessa de criptografia de ponta a ponta                                                                          |
 
-Os testes anteriores de login, cadastro, isolamento entre usuários, salário bruto/líquido, metas, investimentos, empréstimos/financiamentos, automação e relatórios continuam na suíte completa.
+## Regressões da 2.3.0 mantidas
 
-## Limites
+| Área                 | Verificação                                                                                                                                                                                                                                          |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Compra e orçamento   | Compra à vista, reserva preservada, taxas iniciais, custo mensal, gastos substituídos, margem, prazo para juntar limitado à sobra atual, valores inválidos e renda insuficiente                                                                      |
+| Financiamento        | Casos de Price e SAC com resultados conhecidos; juros zero; 24 combinações de sistema/taxa/prazo para garantir que a maior parcela respeita o teto calculado até o centavo                                                                           |
+| Sugestões do app     | Receitas/despesas do mês, recorrências e parcelas; VA/VR excluído; dinheiro de metas não fica disponível para a compra; prevenção de duplicação por ocorrência vinculada                                                                             |
+| Fluxo da compra      | Formulário monetário BR; escolha de bem genérico; simular e criar meta com nome/valor/prazo, sem aporte automático; consulta atrasada não substitui juros digitados                                                                                  |
+| Referências BCB      | Conversão efetiva anual/mensal, unidade/fonte/período; requisição fixa sem dados pessoais; cache de dados públicos no servidor e resposta privada ao usuário; autenticação, allowlist, erro e preenchimento manual                                   |
+| Metas                | Várias condições com lógica E, conclusão explícita e valor mínimo reservado; sugestão zero enquanto aguarda; liberação após condições reais e nova espera se a reserva cair; metas concluídas fora de novos aportes                                  |
+| Integridade de grafo | Ciclos diretos/indiretos, autorreferência, relações entre usuários, JSON/valores inválidos e redução de alvo incompatível recusados; UUID normalizado para a proteção de exclusão                                                                    |
+| Migração e exclusão  | Saldos preservados; tutorial e progresso por usuário (a primeira exibição foi revisada na 2.3.1); progresso isolado por dono; exclusão completa com grafo mantém outra conta intacta; configuração antiga acompanha exclusão de conta sem movimentos |
+| Compatibilidade      | Edição de meta por cliente antigo preserva as novas condições/conclusão; configurações antigas de investimento não bloqueiam uma conta sem outros vínculos                                                                                           |
+| Tutorial             | Conta nova percorre contas → recorrências → contratos → lançamentos; adiar e retomar a mesma etapa; conclusão e reinício nas Preferências                                                                                                            |
+| Cadastro             | Dois códigos de erro de e-mail existente retornam mensagem clara/409; interface oferece Entrar com e-mail mantido e senha limpa                                                                                                                      |
+| Regressões           | Autenticação/origem, saldo e centavos, RLS, recorrências, pagamentos adiantados, empréstimos, preferências, calendário/teclado, CSV, cache PWA e sincronização silenciosa                                                                            |
 
-Não houve publicação na Vercel, migração no Supabase remoto, criação/exclusão de contas reais ou alteração das configurações de Auth do usuário. A atualização deve seguir [FASE-2.2.md](FASE-2.2.md).
+Na validação anterior da 2.3.0, a conectividade externa foi conferida sem credenciais: a série imobiliária 20772 respondeu HTTP 200 com uma observação; a tentativa à série de veículos 25471 falhou na conexão neste ambiente. Os testes das duas séries usam respostas controladas, incluindo falhas. A interface permite taxa manual; disponibilidade externa não é garantida.
 
-A interface foi validada por tarefas React, leitura de CSS/componentes e build. **Não houve revisão visual em navegador real**, nem medição nos aparelhos citados. O teste de geometria usa medidas controladas e não substitui renderização real de fontes, popovers, foco, toque ou contraste. O roteiro inclui notebook a 100%, iPhone XR e Android.
+## Limites e publicação
 
-O banco local dos testes é PGlite. Os testes validam políticas, constraints, transações e RPCs com papéis distintos; não representam duas conexões concorrentes independentes no Supabase remoto. A execução do agendamento gerenciado deve ser conferida após publicar. A fonte local e o PWA devem ser conferidos no navegador instalado.
+Não houve publicação na Vercel, execução de SQL no Supabase remoto ou alteração de usuários/configurações reais de Auth. O roteiro está em [FASE-2.3.1.md](FASE-2.3.1.md).
 
-O IPCA usa respostas controladas nos testes. A disponibilidade do serviço oficial e a configuração real de Auth precisam ser verificadas no deploy. SMTP, confirmação de e-mail, recuperação por e-mail, Turnstile e backups automáticos permanecem nas fases futuras acordadas.
+Os testes de interface usam React/jsdom e inspeção de componentes/CSS. **A conferência visual em navegador real, notebook a 100%, iPhone XR e Android ainda precisa ser feita após publicar.** Sem navegador disponível neste ambiente, não foram simulados testes visuais nem clique em coordenadas reais da landing. A contagem de comandos de uso é uma inspeção dos fluxos, não uma pesquisa com participantes.
+
+O PostgreSQL local é PGlite. Valida regras, triggers, RLS e transações com papéis distintos; não representa conexões concorrentes independentes no Supabase remoto. Não houve teste de carga ou invasão contra a aplicação publicada.
+
+A análise de criptografia está em [USABILIDADE-E-PRIVACIDADE.md](USABILIDADE-E-PRIVACIDADE.md), como proposta para uma etapa própria. A versão atual não torna o banco ilegível ao administrador. Não foi realizada auditoria independente nem declarada conformidade ISO.
+
+SMTP, confirmação/recuperação por e-mail, Turnstile e backups automáticos continuam nas fases futuras já combinadas. Nenhuma fonte de anúncios ou API de FIPE foi integrada. As APIs financeiras não foram consultadas de novo: a atualização não muda essas integrações.
