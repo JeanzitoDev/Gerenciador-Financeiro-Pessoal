@@ -38,10 +38,11 @@ export default function useCalendarPosition(
         (bounds?.right ?? window.innerWidth - 4) - 12,
         (nested?.right ?? window.innerWidth - 8) - 8,
       );
-      const width = Math.min(
-        preferredWidth === "anchor" ? rect.width : preferredWidth,
-        rightEdge - leftEdge,
-      );
+      const desiredWidth =
+        preferredWidth === "anchor"
+          ? Math.max(rect.width, 196)
+          : preferredWidth;
+      const width = Math.min(desiredWidth, rightEdge - leftEdge);
       const left = Math.max(
         leftEdge,
         Math.min(
@@ -54,14 +55,14 @@ export default function useCalendarPosition(
         dialog?.querySelector(".dialog-head")?.getBoundingClientRect().bottom ??
           bounds?.top ??
           16,
-        (nested?.top ?? 8) + 8,
+        (nested?.top ?? 0) + 16,
       );
       const bottomEdge = Math.min(
         window.innerHeight - 16,
         dialog?.querySelector(".dialog-foot")?.getBoundingClientRect().top ??
           bounds?.bottom ??
           window.innerHeight - 16,
-        (nested?.bottom ?? window.innerHeight - 8) - 8,
+        (nested?.bottom ?? window.innerHeight) - 16,
       );
       const below = Math.max(0, bottomEdge - rect.bottom - 8);
       const above = Math.max(0, rect.top - topEdge - 8);

@@ -17,6 +17,7 @@ import {
   validateGoalGraph,
 } from "../src/lib/finance/goal-dependencies";
 import { planGoals } from "../src/lib/finance/engine";
+import { buildMonthlyReport } from "../src/lib/finance/reports";
 import { demoData } from "../src/lib/demo";
 import { today } from "../src/lib/finance/dates";
 const scenario: PurchaseInput = {
@@ -280,5 +281,33 @@ describe("fase 2.3.2 — aluguel de imóvel e cofrinho progressivo", () => {
     };
     expect(inferPiggyBankSize(goal)).toBe(500);
     expect(isPiggyBankGoal(goal, [])).toBe(true);
+
+    const customGoal = {
+      ...goal,
+      name: "Minha reserva especial",
+      target_cents: piggyBankTotalCents(150),
+    };
+    expect(inferPiggyBankSize(customGoal)).toBe(150);
+    expect(isPiggyBankGoal(customGoal, [])).toBe(true);
+  });
+
+  it("gera relatório analítico com raio-X de fixos e variáveis, top gastos e filtro por conta", () => {
+    const d = demoData();
+    const currentMonth = today().slice(0, 7);
+    const r6 = buildMonthlyReport(d, currentMonth, today(), { horizon: 6 });
+    expect(r6.periods).toHaveLength(6);
+    expect(r6.current.income).toBeGreaterThan(0);
+    expect(
+      r6.current.fixedExpense + r6.current.variableExpense,
+    ).toBe(r6.current.expense);
+    expect(r6.topExpenses.length).toBeGreaterThan(0);
+    expect(r6.accountSummaries.length).toBe(d.accounts.length);
+
+    const r12 = buildMonthlyReport(d, currentMonth, today(), {
+      horizon: 12,
+      accountId: d.accounts[0].id,
+    });
+    expect(r12.periods).toHaveLength(12);
+    expect(r12.accountSummaries).toHaveLength(1);
   });
 });

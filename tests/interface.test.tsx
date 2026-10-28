@@ -1280,19 +1280,31 @@ describe("fase 2.3.1 — caminhos de uso", () => {
 });
 
 describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
-  it("cria o cofrinho de 1 a 500 e marca números no retângulo interativo", async () => {
+  it("cria o cofrinho de 1 a 500 com máscara de exemplo ou tamanho personalizado e marca números", async () => {
     const user = userEvent.setup();
     render(<FinanceApp demo />);
     await navigate("Metas");
     await user.click(screen.getByRole("button", { name: "Cofrinho 1 a 500" }));
     const dialog = within(screen.getByRole("dialog"));
-    expect(dialog.getByLabelText("Nome")).toHaveProperty(
-      "value",
-      "Cofrinho 1 a 500",
-    );
+    const nameInput = dialog.getByLabelText("Nome") as HTMLInputElement;
+    expect(nameInput.value).toBe("");
+    expect(nameInput.placeholder).toContain("Cofrinho da viagem");
     expect(dialog.getByLabelText("Valor da meta (R$)")).toHaveProperty(
       "value",
       "125.250,00",
+    );
+    await chooseOption(
+      "Tamanho da cartela do cofrinho",
+      "Outro tamanho (personalizado)",
+    );
+    const customSizeInput = dialog.getByLabelText(
+      "Quantidade de números (de 1 até...)",
+    );
+    await user.clear(customSizeInput);
+    await user.type(customSizeInput, "50");
+    expect(dialog.getByLabelText("Valor da meta (R$)")).toHaveProperty(
+      "value",
+      "1.275,00",
     );
     await user.click(dialog.getByRole("button", { name: "Salvar" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -1312,6 +1324,25 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
     );
     expect(
       screen.getByRole("button", { name: "R$ 20 (já guardado)" }),
+    ).toBeTruthy();
+  });
+
+  it("exibe relatórios detalhados com raio-X do orçamento, maiores gastos e histórico de 12 meses", async () => {
+    const user = userEvent.setup();
+    render(<FinanceApp demo />);
+    await navigate("Relatórios");
+    expect(
+      screen.getByRole("region", { name: "Raio-X do orçamento" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("region", { name: "Maiores gastos do mês" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("region", { name: "Balanço por conta" }),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Últimos 12 meses" }));
+    expect(
+      screen.getByText(/Histórico dos últimos 12 meses/),
     ).toBeTruthy();
   });
 

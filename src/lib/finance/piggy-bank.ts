@@ -43,22 +43,29 @@ export function extractMarkedNumbers(
   return marked;
 }
 
+export function hasExactPiggyBankTarget(targetCents: number): number | null {
+  if (targetCents >= 300 && targetCents % 100 === 0) {
+    const targetReais = targetCents / 100;
+    const n = Math.round((-1 + Math.sqrt(1 + 8 * targetReais)) / 2);
+    if (n >= 2 && n <= 2000 && (n * (n + 1)) / 2 === targetReais) {
+      return n;
+    }
+  }
+  return null;
+}
+
 export function inferPiggyBankSize(
   goal: Goal,
   contributions: Contribution[] = [],
 ): number {
-  const nameMatch = goal.name.match(/1\s*a\s*(\d{2,4})/i);
+  const nameMatch = goal.name.match(/1\s*a\s*(\d{1,4})/i);
   if (nameMatch) {
     const parsed = Number(nameMatch[1]);
-    if (parsed >= 10 && parsed <= 1000) return parsed;
+    if (parsed >= 2 && parsed <= 2000) return parsed;
   }
-  // Check exact triangular sum: target_cents = (n * (n + 1) / 2) * 100
-  if (goal.target_cents >= 1000 && goal.target_cents % 100 === 0) {
-    const targetReais = goal.target_cents / 100;
-    const n = Math.round((-1 + Math.sqrt(1 + 8 * targetReais)) / 2);
-    if (n >= 10 && n <= 1000 && (n * (n + 1)) / 2 === targetReais) {
-      return n;
-    }
+  const exactFromTarget = hasExactPiggyBankTarget(goal.target_cents);
+  if (exactFromTarget !== null) {
+    return exactFromTarget;
   }
   let highestTag = 0;
   for (const c of contributions) {
@@ -67,6 +74,7 @@ export function inferPiggyBankSize(
       if (val > highestTag) highestTag = val;
     }
   }
+  if (highestTag > 500) return Math.min(2000, highestTag);
   if (highestTag > 200) return 500;
   if (highestTag > 100) return 200;
   if (highestTag > 0) return 500;
@@ -77,15 +85,9 @@ export function isPiggyBankGoal(
   goal: Goal,
   contributions: Contribution[] = [],
 ): boolean {
-  if (/cofrinho|desafio|1\s*a\s*\d+/i.test(goal.name)) return true;
-  if (
-    [
-      piggyBankTotalCents(500),
-      piggyBankTotalCents(365),
-      piggyBankTotalCents(200),
-      piggyBankTotalCents(100),
-    ].includes(goal.target_cents)
-  ) {
+  if (/cofrinho|desafio|cartela|1\s*a\s*\d+/i.test(goal.name)) return true;
+  const exact = hasExactPiggyBankTarget(goal.target_cents);
+  if (exact !== null && exact >= 10) {
     return true;
   }
   return contributions.some((c) => /#(\d+)\b/.test(c.note ?? ""));

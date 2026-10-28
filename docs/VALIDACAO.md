@@ -1,14 +1,23 @@
-# Validação · Meu Norte 2.3.2
+# Validação · Meu Norte 2.3.3
 
-Base local: v2.3.1, commit `3a86f03`. Esta entrega evolui a base para a **v2.3.2**, preservando os dados, regras financeiras e migrações anteriores.
+Base local: v2.3.2. Esta entrega evolui a base para a **v2.3.3**, preservando os dados, regras financeiras e migrações anteriores.
 
 ## Resultado local
 
-- `npm test`: **175 testes em 15 arquivos aprovados**.
+- `npm test`: **177 testes em 15 arquivos aprovados**.
 - `npm run typecheck`: geração de tipos e TypeScript aprovados.
 - `npm run build`: produção compilada, incluindo a rota pública `/privacidade` atualizada.
 - Node.js 24.19.0 e Next.js 16.4.2; nenhuma dependência nova ou serviço pago adicionado.
 - PostgreSQL local com todas as migrations anteriores e dados existentes aprovados.
+
+## Evidência específica da 2.3.3
+
+| Área                          | Verificação                                                                                                                                                                                    |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lista suspensa no calendário  | `SelectControl` aninhado em `.calendar-heading` abre com largura mínima confortável (`196px`) e espaçamento interno amplo, sem espremer o texto contra o check (`✓`) ou criar scroll duplo     |
+| Máscara no nome do cofrinho   | Campo `Nome` da meta permanece livre com `placeholder` de exemplo (`"Ex.: Cofrinho da viagem, Reserva 1 a 500, Meu carro..."`) e aplica nome padrão automaticamente se salvo em branco         |
+| Cofrinho personalizado        | Opção `"Outro tamanho (personalizado)"` permite definir qualquer cartela de `1 a N` (`2` a `2000`), recalculando a meta em centavos e exibindo o quadro interativo correspondente              |
+| Relatórios completos          | Filtro por conta e período (`6` ou `12` meses), card de Economia e metas (`%` poupado + guardado no mês), **Raio-X do orçamento** (fixos vs. variáveis vs. sobra), **Maiores gastos** e contas |
 
 ## Evidência específica da 2.3.2
 

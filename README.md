@@ -1,10 +1,10 @@
-# Meu Norte · v2.3.2
+# Meu Norte · v2.3.3
 
 Gerenciador financeiro pessoal em **Next.js, TypeScript, Tailwind CSS, Supabase Auth e PostgreSQL**. PWA com finanças online, BRL em centavos e dados separados por usuário.
 
 ## Atualizar a versão já publicada
 
-Para quem está na **v2.3.1**, siga **[a atualização 2.3.2](docs/FASE-2.3.2.md)**: nenhuma migration nova é necessária; basta atualizar o código e fazer o deploy. Para quem está na **v2.3.0**, siga **[a atualização 2.3.1](docs/FASE-2.3.1.md)** e aplique `202610220005_phase231.sql`. Quem está na 2.2.0/2.2.1 precisa aplicar também a migration da fase 2.3, conforme o guia.
+Para quem está na **v2.3.2** ou **v2.3.1**, siga **[a atualização 2.3.3](docs/FASE-2.3.3.md)**: nenhuma migration nova é necessária; basta atualizar o código e fazer o deploy. Para quem está na **v2.3.0**, siga **[a atualização 2.3.1](docs/FASE-2.3.1.md)** e aplique `202610220005_phase231.sql`. Quem está na 2.2.0/2.2.1 precisa aplicar também a migration da fase 2.3, conforme o guia.
 
 **Privacidade (Beta):** esta é uma versão de testes (beta) sem criptografia de ponta a ponta; as contas têm permissões por usuário (RLS), mas o administrador possui acesso técnico ao banco. A versão inclui aviso público detalhado em `/privacidade` sobre a fase beta e o plano de criptografia e chaves de acesso para a versão Produto. Leia [a análise de uso e criptografia](docs/USABILIDADE-E-PRIVACIDADE.md).
 

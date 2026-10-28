@@ -91,6 +91,7 @@ import MoneyInput from "./money-input";
 import SelectControl from "./select-control";
 import PiggyBankBoard from "./piggy-bank-board";
 import { entryStatusLabel, isPaidEarly } from "@/lib/finance/entry-status";
+import { buildMonthlyReport } from "@/lib/finance/reports";
 type Screen =
   | "overview"
   | "transactions"
@@ -255,6 +256,8 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
     [deletingAccount, setDeletingAccount] = useState(false),
     [accountFilter, setAccountFilter] = useState("");
   const [savingOnboarding, setSavingOnboarding] = useState(false);
+  const [reportHorizon, setReportHorizon] = useState<6 | 12>(6);
+  const [reportAccount, setReportAccount] = useState("");
   const [reportTarget, setReportTarget] = useState<
     "categories" | "flow" | null
   >(null);
@@ -540,6 +543,26 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
   });
   const monthlyEntries = data.transactions
     .filter((e) => e.date.startsWith(month) && e.status !== "cancelled")
+    .sort(
+      (a, b) =>
+        b.date.localeCompare(a.date) ||
+        (b.created_at ?? "").localeCompare(a.created_at ?? "") ||
+        b.id.localeCompare(a.id),
+    );
+  const report = buildMonthlyReport(data, month, asOf, {
+    horizon: reportHorizon,
+    accountId: reportAccount,
+  });
+  const reportPeriodKeys = new Set(report.periods.map((p) => p.key));
+  const reportPeriodEntries = data.transactions
+    .filter(
+      (e) =>
+        e.status !== "cancelled" &&
+        reportPeriodKeys.has(e.date.slice(0, 7)) &&
+        (!reportAccount ||
+          e.source_account_id === reportAccount ||
+          e.target_account_id === reportAccount),
+    )
     .sort(
       (a, b) =>
         b.date.localeCompare(a.date) ||
@@ -1498,7 +1521,6 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     onClick={() =>
                       newRecord("goals", {
                         goal_model: "piggy",
-                        name: "Cofrinho 1 a 500",
                         target_cents: 12525000,
                         target_date: addMonths(asOf, 12),
                       })
@@ -1977,25 +1999,91 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
           )}
           {screen === "reports" && (
             <>
-              <div className="report-stats">
+              <div className="toolbar reports-toolbar">
+                <div
+                  className="segmented-tabs"
+                  role="group"
+                  aria-label="Período do histórico"
+                >
+                  {([6, 12] as const).map((h) => (
+                    <button
+                      key={h}
+                      type="button"
+                      className={reportHorizon === h ? "active" : ""}
+                      aria-pressed={reportHorizon === h}
+                      onClick={() => setReportHorizon(h)}
+                    >
+                      Últimos {h} meses
+                    </button>
+                  ))}
+                </div>
+                <div className="reports-account-filter">
+                  <SelectControl
+                    label="Filtrar conta nos relatórios"
+                    value={reportAccount}
+                    onChange={setReportAccount}
+                    options={[
+                      ["", "Todas as contas (sem benefícios)"],
+                      ...data.accounts.map(
+                        (a): [string, string] => [a.id, a.name],
+                      ),
+                    ]}
+                  />
+                </div>
+              </div>
+              <div className="report-stats report-stats-four">
                 <section className="stat-card">
                   <p>Entradas realizadas</p>
-                  <strong>{value(stats.income)}</strong>
-                  <small>Benefícios separados</small>
+                  <strong>{value(report.current.income)}</strong>
+                  <small>
+                    {report.previous.income > 0
+                      ? `${report.deltas.incomeDiff >= 0 ? "+" : "−"}${value(Math.abs(report.deltas.incomeDiff))} vs. ${monthLabel(report.previousMonth).split(" ")[0]}`
+                      : reportAccount
+                        ? nameOf(reportAccount)
+                        : "Benefícios separados"}{" "}
+                    · Média {value(report.averages.income)}
+                  </small>
                 </section>
                 <section className="stat-card">
                   <p>Saídas realizadas</p>
-                  <strong>{value(stats.expense)}</strong>
-                  <small>Transferências excluídas</small>
+                  <strong>{value(report.current.expense)}</strong>
+                  <small>
+                    {report.previous.expense > 0
+                      ? `${report.deltas.expenseDiff >= 0 ? "+" : "−"}${value(Math.abs(report.deltas.expenseDiff))} vs. ${monthLabel(report.previousMonth).split(" ")[0]}`
+                      : "Transferências excluídas"}{" "}
+                    · Média {value(report.averages.expense)}
+                  </small>
                 </section>
                 <section className="stat-card">
                   <p>Resultado do mês</p>
                   <strong
-                    className={stats.result >= 0 ? "positive" : "negative"}
+                    className={
+                      report.current.result >= 0 ? "positive" : "negative"
+                    }
                   >
-                    {value(stats.result)}
+                    {value(report.current.result)}
                   </strong>
-                  <small>{monthLabel(month)}</small>
+                  <small>
+                    {monthLabel(month)} · Média {value(report.averages.result)}
+                  </small>
+                </section>
+                <section className="stat-card">
+                  <p>Economia e metas</p>
+                  <strong
+                    className={
+                      (report.current.savingsRate ?? 0) >= 0.1
+                        ? "positive"
+                        : ""
+                    }
+                  >
+                    {report.current.savingsRate !== null
+                      ? percent(Math.max(0, report.current.savingsRate))
+                      : "0%"}
+                  </strong>
+                  <small>
+                    da renda preservada · Guardado:{" "}
+                    {value(report.current.savedInMonth)}
+                  </small>
                 </section>
               </div>
               <div className="two-column">
@@ -2008,14 +2096,18 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   <div className="section-head">
                     <div>
                       <h2>Evolução do caixa</h2>
-                      <p>Receitas e despesas livres de benefícios.</p>
+                      <p>
+                        {reportAccount
+                          ? `Entradas e saídas em ${nameOf(reportAccount)}.`
+                          : "Receitas e despesas livres de benefícios."}
+                      </p>
                     </div>
                   </div>
                   <FinanceChart
                     hideValues={hidden}
-                    labels={periods.map((p) => p.label)}
-                    primary={periods.map((p) => p.income)}
-                    secondary={periods.map((p) => p.expense)}
+                    labels={report.periods.map((p) => p.label)}
+                    primary={report.periods.map((p) => p.income)}
+                    secondary={report.periods.map((p) => p.expense)}
                   />
                 </section>
                 <section
@@ -2024,9 +2116,14 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   tabIndex={-1}
                   aria-label="Composição das despesas"
                 >
-                  <h2>Composição das despesas</h2>
+                  <div className="section-head">
+                    <div>
+                      <h2>Composição das despesas</h2>
+                      <p>Clique em uma categoria para filtrar nos Lançamentos.</p>
+                    </div>
+                  </div>
                   <div className="category-list">
-                    {categories.map((c, i) => (
+                    {report.expenseCategories.map((c, i) => (
                       <div className="category-row" key={c.name}>
                         <div>
                           <span>
@@ -2038,14 +2135,28 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                         <div className="category-track">
                           <span
                             style={{
-                              width: `${(c.value / totalCategories) * 100}%`,
+                              width: `${c.share * 100}%`,
                             }}
                           />
                         </div>
-                        <small>{percent(c.value / totalCategories)}</small>
+                        <div className="category-meta">
+                          <small>{percent(c.share)}</small>
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => {
+                              setSearch(c.name);
+                              setKind("expense");
+                              if (reportAccount) setAccountFilter(reportAccount);
+                              go("transactions");
+                            }}
+                          >
+                            Ver lançamentos
+                          </button>
+                        </div>
                       </div>
                     ))}
-                    {!categories.length && (
+                    {!report.expenseCategories.length && (
                       <p className="empty-inline">
                         Nenhuma despesa realizada neste mês.
                       </p>
@@ -2053,8 +2164,223 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   </div>
                 </section>
               </div>
+              <div className="two-column">
+                <section
+                  className="panel"
+                  aria-label="Raio-X do orçamento"
+                >
+                  <div className="section-head">
+                    <div>
+                      <h2>Raio-X do orçamento</h2>
+                      <p>
+                        Como seu dinheiro se dividiu entre gastos fixos,
+                        variáveis e sobra no mês.
+                      </p>
+                    </div>
+                  </div>
+                  {(() => {
+                    const base = Math.max(
+                      report.current.income,
+                      report.current.expense,
+                      1,
+                    );
+                    const fixedShare = report.current.fixedExpense / base;
+                    const variableShare = report.current.variableExpense / base;
+                    const surplus = Math.max(0, report.current.result);
+                    const surplusShare = surplus / base;
+                    return (
+                      <div className="budget-xray">
+                        <div
+                          className="xray-bar"
+                          aria-label="Proporção entre fixos, variáveis e sobra"
+                        >
+                          {fixedShare > 0 && (
+                            <span
+                              className="xray-segment fixed"
+                              style={{ width: `${fixedShare * 100}%` }}
+                            />
+                          )}
+                          {variableShare > 0 && (
+                            <span
+                              className="xray-segment variable"
+                              style={{ width: `${variableShare * 100}%` }}
+                            />
+                          )}
+                          {surplusShare > 0 && (
+                            <span
+                              className="xray-segment surplus"
+                              style={{ width: `${surplusShare * 100}%` }}
+                            />
+                          )}
+                        </div>
+                        <div className="xray-grid">
+                          <div className="xray-item">
+                            <span>
+                              <i className="category-dot cat-0" />
+                              Compromissos fixos e parcelas
+                            </span>
+                            <strong>{value(report.current.fixedExpense)}</strong>
+                            <small>
+                              {percent(fixedShare)} do movimento · Recorrências e
+                              dívidas
+                            </small>
+                          </div>
+                          <div className="xray-item">
+                            <span>
+                              <i className="category-dot cat-2" />
+                              Gastos variáveis do dia a dia
+                            </span>
+                            <strong>
+                              {value(report.current.variableExpense)}
+                            </strong>
+                            <small>
+                              {percent(variableShare)} do movimento · Compras e
+                              avulsos
+                            </small>
+                          </div>
+                          <div className="xray-item">
+                            <span>
+                              <i className="category-dot cat-1" />
+                              Sobra livre no mês
+                            </span>
+                            <strong
+                              className={surplus > 0 ? "positive" : undefined}
+                            >
+                              {value(surplus)}
+                            </strong>
+                            <small>
+                              {percent(surplusShare)} preservado · Guardado em
+                              metas: {value(report.current.savedInMonth)}
+                            </small>
+                          </div>
+                        </div>
+                        {(report.current.plannedIncome > 0 ||
+                          report.current.plannedExpense > 0) && (
+                          <div className="callout subtle">
+                            <Info size={16} />
+                            <span>
+                              Previstos ainda em aberto em {monthLabel(month)}:{" "}
+                              <strong>
+                                +{value(report.current.plannedIncome)}
+                              </strong>{" "}
+                              em receitas e{" "}
+                              <strong>
+                                −{value(report.current.plannedExpense)}
+                              </strong>{" "}
+                              em despesas.
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </section>
+                <section
+                  className="panel"
+                  aria-label="Maiores gastos do mês"
+                >
+                  <div className="section-head">
+                    <div>
+                      <h2>Maiores gastos e origem das receitas</h2>
+                      <p>
+                        Os lançamentos que mais pesaram em {monthLabel(month)}.
+                      </p>
+                    </div>
+                  </div>
+                  {report.topExpenses.length ? (
+                    <div className="top-expenses-list">
+                      {report.topExpenses.map((item, idx) => (
+                        <div className="top-expense-row" key={item.id}>
+                          <div>
+                            <strong>
+                              {idx + 1}. {item.description}
+                            </strong>
+                            <small>
+                              {item.category} · {formatDate(item.date)} ·{" "}
+                              {item.accountName} ·{" "}
+                              {item.isFixed ? "Fixo/Parcela" : "Variável"}
+                            </small>
+                          </div>
+                          <strong className="negative">
+                            −{value(item.amount_cents)}
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="empty-inline">
+                      Sem despesas registradas neste período.
+                    </p>
+                  )}
+                  {report.incomeCategories.length > 0 && (
+                    <div className="income-sources-box">
+                      <h3>Origem das receitas no mês</h3>
+                      <div className="income-sources-list">
+                        {report.incomeCategories.map((inc) => (
+                          <div className="income-source-chip" key={inc.name}>
+                            <span>{inc.name}</span>
+                            <strong>{value(inc.value)}</strong>
+                            <small>{percent(inc.share)}</small>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </section>
+              </div>
+              <section className="panel" aria-label="Balanço por conta">
+                <div className="section-head">
+                  <div>
+                    <h2>Balanço por conta</h2>
+                    <p>
+                      Movimentação em {monthLabel(month)} e saldo atual de cada
+                      conta.
+                    </p>
+                  </div>
+                </div>
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Conta</th>
+                        <th>Entradas no mês</th>
+                        <th>Saídas no mês</th>
+                        <th>Guardado em metas</th>
+                        <th>Saldo atual</th>
+                        <th>Livre para usar</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {report.accountSummaries.map((row) => (
+                        <tr key={row.account.id}>
+                          <td>{row.account.name}</td>
+                          <td>{value(row.income)}</td>
+                          <td>{value(row.expense)}</td>
+                          <td>{value(row.savedInMonth)}</td>
+                          <td>{value(row.balance)}</td>
+                          <td
+                            className={
+                              row.available >= 0 ? "positive" : "negative"
+                            }
+                          >
+                            {value(row.available)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
               <section className="panel">
-                <h2>Fechamento por mês</h2>
+                <div className="section-head">
+                  <div>
+                    <h2>Fechamento por mês</h2>
+                    <p>
+                      Histórico dos últimos {reportHorizon} meses com taxa de
+                      economia e reservas.
+                    </p>
+                  </div>
+                </div>
                 <div className="table-scroll">
                   <table>
                     <thead>
@@ -2062,15 +2388,23 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                         <th>Mês</th>
                         <th>Receitas</th>
                         <th>Despesas</th>
+                        <th>Guardado em metas</th>
+                        <th>% Poupado</th>
                         <th>Resultado</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {periods.map((p) => (
+                      {report.periods.map((p) => (
                         <tr key={p.key}>
                           <td>{monthLabel(p.key)}</td>
                           <td>{value(p.income)}</td>
                           <td>{value(p.expense)}</td>
+                          <td>{value(p.savedInMonth)}</td>
+                          <td>
+                            {p.savingsRate !== null
+                              ? percent(Math.max(0, p.savingsRate))
+                              : "—"}
+                          </td>
                           <td
                             className={p.result >= 0 ? "positive" : "negative"}
                           >
@@ -2086,13 +2420,22 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   Previsto e cancelado não compõem estes totais. Patrimônio
                   atual: {value(stats.assets)} · VA/VR: {value(stats.benefits)}.
                 </p>
-                <button
-                  className="button secondary"
-                  onClick={() => downloadCSV(monthlyEntries)}
-                >
-                  <Download size={16} />
-                  Baixar lançamentos de {monthLabel(month)} (CSV)
-                </button>
+                <div className="button-row">
+                  <button
+                    className="button secondary"
+                    onClick={() => downloadCSV(monthlyEntries)}
+                  >
+                    <Download size={16} />
+                    Baixar lançamentos de {monthLabel(month)} (CSV)
+                  </button>
+                  <button
+                    className="button secondary"
+                    onClick={() => downloadCSV(reportPeriodEntries)}
+                  >
+                    <Download size={16} />
+                    Exportar período ({reportHorizon} meses) (CSV)
+                  </button>
+                </div>
               </section>
             </>
           )}

@@ -147,6 +147,11 @@ export default function RecordForm({
     () => (state.preset?.goal_model === "piggy" ? "piggy" : "free"),
   );
   const [piggyMax, setPiggyMax] = useState("500");
+  const [customPiggyMax, setCustomPiggyMax] = useState("150");
+  const effectivePiggyMax =
+    piggyMax === "custom"
+      ? Math.max(2, Math.min(2000, Math.trunc(Number(customPiggyMax) || 150)))
+      : Math.max(2, Math.min(2000, Number(piggyMax) || 500));
   const [progStart, setProgStart] = useState("100,00");
   const [progStep, setProgStep] = useState("50,00");
   const [progMonths, setProgMonths] = useState("12");
@@ -185,6 +190,7 @@ export default function RecordForm({
       hint?: string;
       min?: string;
       max?: string;
+      placeholder?: string;
     },
   ) => (
     <label className="form-field" key={key}>
@@ -211,6 +217,7 @@ export default function RecordForm({
           name={key}
           value={values[key] ?? ""}
           aria-label={label}
+          placeholder={options?.placeholder}
           onChange={(e) => update(key, e.target.value)}
           type={options?.type ?? "text"}
           required={options?.required ?? true}
@@ -285,9 +292,15 @@ export default function RecordForm({
             opening_date: v.opening_date,
           };
           break;
-        case "goals":
+        case "goals": {
+          const fallbackName =
+            goalModel === "piggy"
+              ? `Cofrinho 1 a ${effectivePiggyMax}`
+              : goalModel === "progressive"
+                ? `Cofrinho progressivo (${Math.max(2, Math.min(240, Number(progMonths) || 12))} meses)`
+                : "";
           payload = {
-            name: v.name,
+            name: v.name.trim() || fallbackName,
             target_cents: money("target_cents"),
             target_date: v.target_date,
             priority: Number(v.priority),
@@ -296,6 +309,7 @@ export default function RecordForm({
             dependencies: parseConditions(conditions),
           };
           break;
+        }
         case "contributions":
           payload = {
             goal_id: v.goal_id,
@@ -381,7 +395,12 @@ export default function RecordForm({
           <div>
             <p className="eyebrow">ORGANIZAR É O PRIMEIRO PASSO</p>
             <h2 id="form-title">
-              {state.record ? "Editar" : "Novo"} {labels[e]}
+              {state.record
+                ? "Editar"
+                : ["accounts", "goals", "recurrences"].includes(e)
+                  ? "Nova"
+                  : "Novo"}{" "}
+              {labels[e]}
             </h2>
           </div>
           <button
@@ -399,7 +418,19 @@ export default function RecordForm({
             e === "goals" ||
             e === "investments" ||
             e === "loans") &&
-            field("name", "Nome")}
+            field("name", "Nome", {
+              required: e !== "goals" || goalModel === "free",
+              placeholder:
+                e === "goals"
+                  ? goalModel === "piggy"
+                    ? "Ex.: Cofrinho da viagem, Reserva 1 a 500, Meu carro..."
+                    : goalModel === "progressive"
+                      ? "Ex.: Cofrinho de 12 meses, Reserva de fim de ano..."
+                      : "Ex.: Reserva de emergência, Próxima viagem..."
+                  : e === "accounts"
+                    ? "Ex.: Conta do dia a dia, Carteira, Reserva..."
+                    : undefined,
+            })}
           {e === "accounts" && (
             <>
               {select("kind", "Tipo de conta", accountKinds)}
@@ -622,14 +653,9 @@ export default function RecordForm({
                     const nextModel = v as "free" | "piggy" | "progressive";
                     setGoalModel(nextModel);
                     if (nextModel === "piggy") {
-                      const n = Math.max(
-                        10,
-                        Math.min(1000, Number(piggyMax) || 500),
-                      );
-                      const total = piggyBankTotalCents(n);
+                      const total = piggyBankTotalCents(effectivePiggyMax);
                       setValues((old) => ({
                         ...old,
-                        name: old.name.trim() ? old.name : `Cofrinho 1 a ${n}`,
                         target_cents: moneyInput(total),
                         target_date: old.target_date || addMonths(today(), 12),
                       }));
@@ -659,14 +685,19 @@ export default function RecordForm({
                         value={piggyMax}
                         onChange={(v) => {
                           setPiggyMax(v);
-                          const n = Number(v) || 500;
+                          const n =
+                            v === "custom"
+                              ? Math.max(
+                                  2,
+                                  Math.min(
+                                    2000,
+                                    Math.trunc(Number(customPiggyMax) || 150),
+                                  ),
+                                )
+                              : Number(v) || 500;
                           const total = piggyBankTotalCents(n);
                           setValues((old) => ({
                             ...old,
-                            name:
-                              !old.name.trim() || /^Cofrinho 1 a \d+$/i.test(old.name.trim())
-                                ? `Cofrinho 1 a ${n}`
-                                : old.name,
                             target_cents: moneyInput(total),
                           }));
                         }}
@@ -675,14 +706,52 @@ export default function RecordForm({
                           ["365", "1 a 365 reais (Total: R$ 66.795,00)"],
                           ["200", "1 a 200 reais (Total: R$ 20.100,00)"],
                           ["100", "1 a 100 reais (Total: R$ 5.050,00)"],
+                          ["custom", "Outro tamanho (personalizado)"],
                         ]}
                       />
                     </div>
+                    {piggyMax === "custom" && (
+                      <label className="form-field">
+                        <span>Quantidade de números (de 1 até...)</span>
+                        <input
+                          type="number"
+                          aria-label="Quantidade de números (de 1 até...)"
+                          min={2}
+                          max={2000}
+                          placeholder="Ex.: 50, 150, 250..."
+                          value={customPiggyMax}
+                          onChange={(ev) => {
+                            const raw = ev.target.value;
+                            setCustomPiggyMax(raw);
+                            const parsed = Number(raw);
+                            if (Number.isFinite(parsed) && parsed >= 2) {
+                              const clamped = Math.max(
+                                2,
+                                Math.min(2000, Math.trunc(parsed)),
+                              );
+                              const total = piggyBankTotalCents(clamped);
+                              setValues((old) => ({
+                                ...old,
+                                target_cents: moneyInput(total),
+                              }));
+                            }
+                          }}
+                        />
+                        <small>
+                          Total de 1 a {effectivePiggyMax}:{" "}
+                          <strong>
+                            {formatMoney(piggyBankTotalCents(effectivePiggyMax))}
+                          </strong>
+                        </small>
+                      </label>
+                    )}
                   </div>
                   <p className="form-help">
                     Ao salvar, sua meta terá um retângulo interativo com os
-                    números de 1 a {piggyMax}. Conforme você reservar cada
-                    valor, basta clicar nos números para marcá-los.
+                    números de 1 a {effectivePiggyMax} (total de{" "}
+                    {formatMoney(piggyBankTotalCents(effectivePiggyMax))}).
+                    Conforme você reservar cada valor, basta clicar nos números
+                    para marcá-los.
                   </p>
                 </div>
               )}
@@ -737,9 +806,6 @@ export default function RecordForm({
                             );
                             setValues((old) => ({
                               ...old,
-                              name: old.name.trim()
-                                ? old.name
-                                : `Cofrinho progressivo (${m} meses)`,
                               target_cents: moneyInput(total),
                               target_date: addMonths(today(), m),
                             }));
