@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Compass, ArrowRight, ShieldCheck } from "lucide-react";
+import { ArrowRight, ShieldCheck } from "lucide-react";
 import BrandMark from "./brand-mark";
 import { APP_VERSION } from "@/lib/version";
 export default function AuthForm({
@@ -198,8 +198,8 @@ export default function AuthForm({
             )}
             {mode === "signup" && (
               <p className="signup-privacy">
-                O administrador tem acesso técnico aos dados financeiros no
-                banco desta versão. Leia{" "}
+                Versão beta (teste) sem criptografia de ponta a ponta: o
+                administrador possui acesso técnico ao banco nesta fase. Leia{" "}
                 <Link href="/privacidade">como seus dados são tratados</Link>{" "}
                 antes de criar sua conta.
               </p>

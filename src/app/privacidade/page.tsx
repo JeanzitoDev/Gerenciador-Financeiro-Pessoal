@@ -19,26 +19,53 @@ export default function Privacy() {
         </Link>
       </header>
       <h1>Seus dados, com clareza.</h1>
-      <p>Meu Norte · v{APP_VERSION} · aviso atualizado em 22/10/2026.</p>
+      <p>
+        Meu Norte · v{APP_VERSION} · versão beta (teste) · aviso atualizado em
+        28/10/2026.
+      </p>
       <section className="panel privacy-notice">
-        <h2>Quem pode acessar?</h2>
+        <h2>Quem pode acessar? (Versão Beta · Teste)</h2>
         <p>
           As permissões do banco separam os registros de cada usuário. Uma conta
           comum não pode consultar ou alterar os dados de outra conta.
         </p>
         <p>
           <strong>
-            O administrador do projeto tem acesso técnico aos dados financeiros
-            pelo banco.
+            Importante: estas são versões betas (de teste) e não possuem
+            criptografia de ponta a ponta. O administrador do projeto tem acesso
+            técnico aos dados financeiros pelo banco.
           </strong>{" "}
-          Esta versão não usa criptografia de ponta a ponta nem uma chave que só
-          você possui. Não prometemos que o responsável pelo projeto seja
-          tecnicamente incapaz de ler esses dados.
+          Por estarmos em fase de testes e sem criptografia exclusiva por chave
+          do usuário, o responsável pelo projeto (JeanzitoDev) exime-se da
+          responsabilidade de afirmar que não possui acesso algum aos dados,
+          pois enquanto perdurar a fase beta esse acesso técnico ao banco de
+          dados existe de fato.
         </p>
         <p>
           Se você está conhecendo o app e prefere não compartilhar informações
-          reais, use valores fictícios ou a{" "}
+          reais nesta fase de testes, use valores fictícios ou a{" "}
           <Link href="/demo">demonstração</Link>.
+        </p>
+      </section>
+      <section className="panel">
+        <h2>Futuro lançamento como Produto e criptografia</h2>
+        <p>
+          Em uma eventual disponibilização ao público como{" "}
+          <strong>Produto oficial</strong>, será implementada{" "}
+          <strong>criptografia</strong> para que as informações sensíveis
+          estejam disponíveis <strong>somente ao próprio usuário</strong>, bem
+          como recursos completos de <strong>recuperação de senha</strong> e
+          gestão de acesso.
+        </p>
+        <p>
+          Nessa etapa com criptografia ativa, se eventualmente o usuário
+          solicitar algum <strong>relatório ou suporte</strong>, ou caso haja
+          necessidade de acesso vinculada a um{" "}
+          <strong>boletim de ocorrência (B.O.) ou solicitação judicial</strong>,
+          o responsável somente conseguirá acessar os dados caso essa
+          solicitação seja feita e utilizando uma{" "}
+          <strong>chave ou autorização de acesso</strong> específica para
+          destrancar as informações.
         </p>
       </section>
       <section className="panel">

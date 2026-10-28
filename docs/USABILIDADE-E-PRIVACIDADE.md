@@ -1,6 +1,6 @@
-# Meu Norte 2.3.1: uso, privacidade e próximo passo de arquitetura
+# Meu Norte 2.3.2: uso, privacidade e próximo passo de arquitetura
 
-Análise do código e dos fluxos, em 22/10/2026. As alterações da interface estão implementadas nesta entrega. A criptografia com chave exclusiva do usuário descrita abaixo é uma proposta de arquitetura; **não está implementada na 2.3.1**. Não houve auditoria independente nem teste com participantes.
+Análise do código e dos fluxos atualizada para a **v2.3.2**. As alterações da interface estão implementadas nesta entrega. A criptografia com chave exclusiva do usuário descrita abaixo é o plano de arquitetura para quando o aplicativo for disponibilizado como **Produto**; **não está implementada nas versões Beta atuais (2.3.x)**. Não houve auditoria independente nem teste com participantes.
 
 ## Facilidade de uso
 

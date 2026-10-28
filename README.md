@@ -1,12 +1,12 @@
-# Meu Norte · v2.3.1
+# Meu Norte · v2.3.2
 
 Gerenciador financeiro pessoal em **Next.js, TypeScript, Tailwind CSS, Supabase Auth e PostgreSQL**. PWA com finanças online, BRL em centavos e dados separados por usuário.
 
 ## Atualizar a versão já publicada
 
-Para quem está na **v2.3.0**, siga **[a atualização 2.3.1](docs/FASE-2.3.1.md)**: aplique somente `202610220005_phase231.sql`, atualize o código e faça o deploy. Quem está na 2.2.0/2.2.1 precisa aplicar também a migration da fase 2.3, conforme o guia. A atualização corrige o tutorial de contas existentes, reduz duplicações e permite revisar aportes pelo Planejamento.
+Para quem está na **v2.3.1**, siga **[a atualização 2.3.2](docs/FASE-2.3.2.md)**: nenhuma migration nova é necessária; basta atualizar o código e fazer o deploy. Para quem está na **v2.3.0**, siga **[a atualização 2.3.1](docs/FASE-2.3.1.md)** e aplique `202610220005_phase231.sql`. Quem está na 2.2.0/2.2.1 precisa aplicar também a migration da fase 2.3, conforme o guia.
 
-**Privacidade:** as contas têm permissões por usuário, mas o administrador consegue consultar os dados no banco. A versão inclui aviso público em `/privacidade`. Leia [a análise de uso e criptografia](docs/USABILIDADE-E-PRIVACIDADE.md); a proposta de chave exclusiva no navegador ainda não foi implementada.
+**Privacidade (Beta):** esta é uma versão de testes (beta) sem criptografia de ponta a ponta; as contas têm permissões por usuário (RLS), mas o administrador possui acesso técnico ao banco. A versão inclui aviso público detalhado em `/privacidade` sobre a fase beta e o plano de criptografia e chaves de acesso para a versão Produto. Leia [a análise de uso e criptografia](docs/USABILIDADE-E-PRIVACIDADE.md).
 
 Para atualizar a v1, leia primeiro **[o roteiro da fase 2](docs/FASE-2.md)**. Use a migração incremental `202610180002_phase2.sql`, depois atualize o código e faça o deploy. **Não execute novamente a migração inicial em um banco já existente.**
 
@@ -51,8 +51,8 @@ Nunca envie `.env.local` ao Git. A chave pública é diferente da chave privada.
 ## Funcionalidades
 
 - Contas, receitas, despesas e recorrências. Confirmação Recebi/Paguei em Lançamentos; registro automático é opcional. Dinheiro guardado e VA/VR têm tratamento próprio.
-- Metas com aportes, conclusão e condições entre objetivos. Planejamento distribui o orçamento entre as metas disponíveis e explica as que aguardam.
-- **Cabe no meu bolso?**: compras e projetos em geral, preço desejado ou teto de gasto, à vista ou parcelado, entrada, custos de uso, folga mensal, juros, prazo para juntar e criação de meta.
+- Metas com aportes, conclusão, condições entre objetivos, **Desafio do Cofrinho (cartela interativa de 1 a 500 = R$ 125.250)** e **Cofrinho mensal progressivo**. Planejamento distribui o orçamento entre as metas disponíveis e explica as que aguardam.
+- **Cabe no meu bolso?**: compras, projetos em geral e **aluguel de imóvel** (com caução ou seguro fiança), preço desejado ou teto de gasto, à vista ou parcelado, entrada, custos de uso, folga mensal, juros, prazo para juntar e criação de meta.
 - Referências gratuitas de juros de veículos/imóveis pelo servidor do app, sem enviar dados pessoais ao provedor. Price/SAC, fonte/data e taxa manual como alternativa.
 - Empréstimos e financiamentos com parcelas fixas, histórico, pagamentos e simulação de amortização. Juros e CET são campos diferentes.
 - Tutorial por usuário, nome no cadastro, aviso de e-mail existente, alteração de senha autenticada e exclusão completa com verificação de senha.
@@ -78,6 +78,8 @@ Os testes cobrem domínio financeiro, RLS, regras de banco, Auth simulado, rotas
 
 ## Documentação
 
+- [Atualização 2.3.2](docs/FASE-2.3.2.md)
+- [Atualização 2.3.1](docs/FASE-2.3.1.md)
 - [Atualização 2.3 e roteiro de conferência](docs/FASE-2.3.md)
 - [Atualização e homologação da fase 2](docs/FASE-2.md)
 - [Controles e limites de segurança](docs/SEGURANCA.md)

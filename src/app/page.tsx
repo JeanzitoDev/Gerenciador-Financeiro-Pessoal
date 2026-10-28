@@ -2,7 +2,6 @@ import Link from "next/link";
 import BrandMark from "@/components/brand-mark";
 import { APP_VERSION } from "@/lib/version";
 import {
-  Compass,
   ArrowRight,
   Wallet,
   Target,

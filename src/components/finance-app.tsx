@@ -36,8 +36,8 @@ import {
   Banknote,
   Gift,
   Calculator,
-  FileChartColumn,
   Compass,
+  FileChartColumn,
   ShieldCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -89,6 +89,7 @@ import { MonthControl } from "./date-control";
 import { APP_VERSION } from "@/lib/version";
 import MoneyInput from "./money-input";
 import SelectControl from "./select-control";
+import PiggyBankBoard from "./piggy-bank-board";
 import { entryStatusLabel, isPaidEarly } from "@/lib/finance/entry-status";
 type Screen =
   | "overview"
@@ -504,7 +505,9 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
   if (!data)
     return (
       <main className="loading-page">
-        <Compass size={38} />
+        <span className="brand-symbol">
+          <BrandMark size={48} />
+        </span>
         <h1>Meu Norte</h1>
         {loading ? (
           <p>Preparando seu espaço…</p>
@@ -954,6 +957,14 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                 ? "Reservar mesmo assim"
                 : "Reservar um aporte"}
         </button>
+        {screen === "goals" && !goal.completed && (
+          <PiggyBankBoard
+            goal={goal}
+            contributions={data!.contributions}
+            accounts={availableAccounts.map((x) => x.account)}
+            onReserve={(payload) => save("contributions", "POST", payload)}
+          />
+        )}
       </article>
     );
   }
@@ -1108,28 +1119,25 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
               </button>
             </div>
           )}
-          <GettingStarted
-            step={onboardingStep}
-            busy={savingOnboarding}
-            hasAccounts={data.accounts.length > 0}
-            onStep={(step) => void setOnboarding(step)}
-            onDismiss={() => void setOnboarding(onboardingStep, true)}
-            onAction={() => {
-              const step = onboardingStep;
-              if (step === 0) {
-                go("accounts");
-                newRecord("accounts");
-              } else if (step === 1) {
-                go("recurrences");
-                newRecord("recurrences");
-              } else if (step === 2) {
-                go("loans");
-                newRecord("loans");
-              } else go("transactions");
-            }}
-          />
           {screen === "overview" && (
             <>
+              <GettingStarted
+                step={onboardingStep}
+                busy={savingOnboarding}
+                hasAccounts={data.accounts.length > 0}
+                onStep={(step) => void setOnboarding(step)}
+                onDismiss={() => void setOnboarding(onboardingStep, true)}
+                onAction={() => {
+                  const step = onboardingStep;
+                  if (step === 0) {
+                    newRecord("accounts");
+                  } else if (step === 1) {
+                    newRecord("recurrences");
+                  } else if (step === 2) {
+                    newRecord("loans");
+                  } else go("transactions");
+                }}
+              />
               <div className="summary-grid">
                 <section className="balance-hero">
                   <div className="hero-top">
@@ -1484,13 +1492,29 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   <span>Total reservado</span>
                   <strong>{value(stats.assigned)}</strong>
                 </div>
-                <button
-                  className="button primary"
-                  onClick={() => newRecord("goals")}
-                >
-                  <Plus size={17} />
-                  Nova meta
-                </button>
+                <div className="button-row">
+                  <button
+                    className="button secondary"
+                    onClick={() =>
+                      newRecord("goals", {
+                        goal_model: "piggy",
+                        name: "Cofrinho 1 a 500",
+                        target_cents: 12525000,
+                        target_date: addMonths(asOf, 12),
+                      })
+                    }
+                  >
+                    <Sparkles size={16} />
+                    Cofrinho 1 a 500
+                  </button>
+                  <button
+                    className="button primary"
+                    onClick={() => newRecord("goals")}
+                  >
+                    <Plus size={17} />
+                    Nova meta
+                  </button>
+                </div>
               </div>
               {data.goals.length ? (
                 <div className="goals-grid">{data.goals.map(goalCard)}</div>
@@ -2074,41 +2098,6 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
           )}
           {screen === "settings" && preferences && (
             <div className="settings-layout">
-              <section className="panel onboarding-help">
-                <h2>Primeiros passos</h2>
-                <p>
-                  Revise a ordem para organizar contas, recorrências, contratos
-                  e lançamentos.
-                </p>
-                <button
-                  className="button secondary"
-                  disabled={savingOnboarding}
-                  onClick={() =>
-                    void setOnboarding(
-                      (data.profile.onboarding_step ?? 4) < 4
-                        ? data.profile.onboarding_step!
-                        : 0,
-                    )
-                  }
-                >
-                  Ver tutorial inicial
-                </button>
-              </section>
-              <section
-                className="panel privacy-notice"
-                aria-label="Privacidade dos seus dados"
-              >
-                <h2>Quem pode ver meus dados?</h2>
-                <p>
-                  Outros usuários não podem consultar seus registros pelas
-                  permissões do app. O administrador do projeto tem acesso
-                  técnico aos dados no banco. Esta versão ainda não possui
-                  criptografia com chave exclusiva sua.
-                </p>
-                <Link className="text-button" href="/privacidade">
-                  Entender a privacidade dos dados <ArrowRight size={16} />
-                </Link>
-              </section>
               <section className="panel">
                 <div className="section-head">
                   <div>
@@ -2267,7 +2256,8 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   </span>
                   <h2 className="spaced-title">Sempre à mão</h2>
                   <p className="muted">
-                    Instale o Meu Norte para abrir direto pela tela inicial.
+                    Instale o Meu Norte no celular para abrir direto pela tela
+                    inicial, com visual de aplicativo.
                   </p>
                   <ol className="install-steps">
                     <li>
@@ -2283,6 +2273,42 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     É preciso conexão para consultar e salvar suas finanças.
                     Dados financeiros não são armazenados para uso offline.
                   </p>
+                </section>
+                <section className="panel onboarding-help">
+                  <h2>Primeiros passos</h2>
+                  <p>
+                    Revise a ordem para organizar contas, recorrências,
+                    contratos e lançamentos na Visão geral.
+                  </p>
+                  <button
+                    className="button secondary"
+                    disabled={savingOnboarding}
+                    onClick={() => {
+                      void setOnboarding(
+                        (data.profile.onboarding_step ?? 4) < 4
+                          ? data.profile.onboarding_step!
+                          : 0,
+                      );
+                      go("overview");
+                    }}
+                  >
+                    Ver tutorial inicial
+                  </button>
+                </section>
+                <section
+                  className="panel privacy-notice"
+                  aria-label="Privacidade dos seus dados"
+                >
+                  <h2>Quem pode ver meus dados?</h2>
+                  <p>
+                    Outros usuários não podem consultar seus registros pelas
+                    permissões do app. Como esta é uma versão beta (teste) sem
+                    criptografia de ponta a ponta, o administrador do projeto
+                    tem acesso técnico ao banco nesta fase.
+                  </p>
+                  <Link className="text-button" href="/privacidade">
+                    Entender a privacidade dos dados <ArrowRight size={16} />
+                  </Link>
                 </section>
                 <section className="panel">
                   <div className="section-title">

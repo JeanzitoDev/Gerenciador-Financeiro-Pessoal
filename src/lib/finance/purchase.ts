@@ -5,7 +5,10 @@ import { recurrenceDates } from "./recurrence";
 import { addMonths } from "./dates";
 import { loanSchedule } from "./loans";
 
+export type RentGuarantee = "none" | "deposit" | "insurance";
+
 export interface PurchaseInput {
+  category?: string;
   mode: "purchase" | "ceiling";
   payment: "cash" | "financed";
   system: "price" | "sac";
@@ -21,7 +24,11 @@ export interface PurchaseInput {
   months: number;
   monthlyRate: number;
   monthlySaving: number;
+  rentGuarantee?: RentGuarantee;
+  deposit?: number;
+  rentInsurance?: number;
 }
+
 function principalForPayment(
   payment: number,
   count: number,
@@ -38,7 +45,15 @@ function principalForPayment(
           .div(r);
   return principal.floor();
 }
+
 export function simulatePurchase(v: PurchaseInput) {
+  const isRent = v.category === "rent";
+  const guarantee: RentGuarantee = isRent ? (v.rentGuarantee ?? "none") : "none";
+  const deposit =
+    isRent && guarantee === "deposit" ? (v.deposit ?? 0) : 0;
+  const rentInsurance =
+    isRent && guarantee === "insurance" ? (v.rentInsurance ?? 0) : 0;
+
   const amounts = [
     v.price,
     v.income,
@@ -50,6 +65,8 @@ export function simulatePurchase(v: PurchaseInput) {
     v.ongoing,
     v.buffer,
     v.monthlySaving,
+    deposit,
+    rentInsurance,
   ];
   if (
     !amounts.every(
@@ -57,11 +74,14 @@ export function simulatePurchase(v: PurchaseInput) {
     ) ||
     !["cash", "financed"].includes(v.payment) ||
     !["purchase", "ceiling"].includes(v.mode) ||
-    !["price", "sac"].includes(v.system)
+    !["price", "sac"].includes(v.system) ||
+    !["none", "deposit", "insurance"].includes(guarantee)
   )
     throw new Error("Revise os valores da simulação.");
   if (v.mode === "purchase" && !v.price)
-    throw new Error("Informe o preço da compra.");
+    throw new Error(
+      isRent ? "Informe o valor do aluguel." : "Informe o preço da compra.",
+    );
   if (v.replacedExpenses > v.expenses)
     throw new Error(
       "Os gastos que vão acabar não podem passar dos gastos atuais.",
@@ -75,6 +95,85 @@ export function simulatePurchase(v: PurchaseInput) {
     v.monthlyRate > 1
   )
     throw new Error("Use de 1 a 600 parcelas e juros de 0% a 100% ao mês.");
+
+  if (isRent) {
+    const effectiveFees = checkedCents(
+      new Decimal(v.fees).plus(deposit),
+      MAX_CENTS,
+    );
+    const effectiveOngoing = checkedCents(
+      new Decimal(v.ongoing).plus(rentInsurance),
+      MAX_CENTS,
+    );
+    const monthlyRoom = checkedCents(
+      new Decimal(v.income)
+        .minus(v.expenses)
+        .plus(v.replacedExpenses)
+        .minus(effectiveOngoing)
+        .minus(v.buffer),
+    );
+    const capacity = Math.max(0, monthlyRoom);
+    const ceiling = monthlyRoom < 0 ? 0 : capacity;
+    const price = v.mode === "ceiling" ? ceiling : v.price;
+    const freeForEntry = Decimal.max(
+      0,
+      new Decimal(v.savings).minus(v.reserve),
+    );
+    const entryUsed = checkedCents(
+      Decimal.min(effectiveFees, freeForEntry),
+      MAX_CENTS,
+    );
+    const purchaseCashTarget = effectiveFees;
+    const missingCash = checkedCents(
+      Decimal.max(
+        0,
+        new Decimal(effectiveFees).plus(v.reserve).minus(v.savings),
+      ),
+      MAX_CENTS,
+    );
+    const beforePurchaseRoom = Math.max(0, v.income - v.expenses - v.buffer);
+    const saving = Math.min(v.monthlySaving, beforePurchaseRoom);
+    const monthsToSave = !missingCash
+      ? 0
+      : saving > 0
+        ? new Decimal(missingCash).div(saving).ceil().toNumber()
+        : null;
+    const fits = missingCash === 0 && monthlyRoom >= price && price > 0;
+    const monthlyCommitment = checkedCents(
+      new Decimal(price).plus(effectiveOngoing),
+      MAX_CENTS,
+    );
+    return {
+      price,
+      ceiling,
+      capacity,
+      monthlyRoom,
+      fits,
+      entry: entryUsed,
+      principal: 0,
+      firstPayment: price,
+      lastPayment: price,
+      total: effectiveFees,
+      interest: 0,
+      remainingMonthly: checkedCents(
+        new Decimal(v.income)
+          .minus(v.expenses)
+          .plus(v.replacedExpenses)
+          .minus(effectiveOngoing)
+          .minus(price),
+      ),
+      purchaseCashTarget,
+      missingCash,
+      monthsToSave,
+      saving,
+      savingsAdjusted: v.monthlySaving > beforePurchaseRoom,
+      rentGuarantee: guarantee,
+      deposit,
+      rentInsurance,
+      monthlyCommitment,
+    };
+  }
+
   const monthlyRoom = checkedCents(
     new Decimal(v.income)
       .minus(v.expenses)
@@ -172,6 +271,13 @@ export function simulatePurchase(v: PurchaseInput) {
     monthsToSave,
     saving,
     savingsAdjusted: v.monthlySaving > beforePurchaseRoom,
+    rentGuarantee: "none" as RentGuarantee,
+    deposit: 0,
+    rentInsurance: 0,
+    monthlyCommitment: checkedCents(
+      new Decimal(firstPayment).plus(v.ongoing),
+      MAX_CENTS,
+    ),
   };
 }
 

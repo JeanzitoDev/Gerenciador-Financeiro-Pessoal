@@ -1,15 +1,27 @@
-# Validação · Meu Norte 2.3.1
+# Validação · Meu Norte 2.3.2
 
-Base local: v2.3.0, commit `6d183ba`. O `origin/main` foi conferido em `82a24d7` (v2.2.0); esta entrega parte do código 2.3.0 entregue anteriormente, preservando as alterações intermediárias.
+Base local: v2.3.1, commit `3a86f03`. Esta entrega evolui a base para a **v2.3.2**, preservando os dados, regras financeiras e migrações anteriores.
 
 ## Resultado local
 
-- `npm test`: **171 testes em 15 arquivos aprovados**.
+- `npm test`: **175 testes em 15 arquivos aprovados**.
 - `npm run typecheck`: geração de tipos e TypeScript aprovados.
-- `npm run build`: produção compilada, incluindo a nova rota pública `/privacidade`.
+- `npm run build`: produção compilada, incluindo a rota pública `/privacidade` atualizada.
 - Node.js 24.19.0 e Next.js 16.4.2; nenhuma dependência nova ou serviço pago adicionado.
-- PostgreSQL local com todas as migrations anteriores e dados existentes: saldos preservados, guia reaberto nas contas antigas e conclusões com marcador mantidas, inclusive ao reaplicar a migration nova.
-- `git diff --check` sem erros.
+- PostgreSQL local com todas as migrations anteriores e dados existentes aprovados.
+
+## Evidência específica da 2.3.2
+
+| Área                    | Verificação                                                                                                                                                                                                 |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Menu lateral e foco     | Espaçamento horizontal em `.sidebar nav`, `.nav-item` e `.nav-active-dot` ajustado para exibir a borda ativa/foco e a bolinha indicadora inteiras sem corte                                                  |
+| Carregamento            | Tela `"Preparando seu espaço"` atualizada para renderizar `<BrandMark size={48} />` oficial com animação da agulha                                                                                          |
+| Tutorial na Visão Geral | Componente `GettingStarted` renderizado exclusivamente quando `screen === "overview"`, mantendo o restante das páginas livre                                                                                |
+| Preferências            | Layout de duas colunas alinhado (`Seu espaço, seu jeito` à esquerda; `Sempre à mão`, `Primeiros passos`, `Quem pode ver meus dados?` e `Seu acesso` empilhados à direita)                                  |
+| Privacidade (Beta)      | `/privacidade`, cadastro e Preferências informam versão Beta sem criptografia atual, isenção de garantia de inacessibilidade no Beta e plano para versão Produto (criptografia, recuperação e chave/B.O.)   |
+| Aluguel de imóvel       | Categoria `rent` no simulador com cálculo de aluguel mensal, encargos, caução (com atalho `3x o aluguel`) e seguro fiança mensal, além de criação de meta                                                   |
+| Cofrinho 1 a 500        | Meta de R$ 125.250,00 com retângulo interativo de 1 a 500 dividido por faixas e filtros, marcando números via aportes reais (`Cofrinho #...`), além de opção de cofrinho mensal progressivo no formulário |
+| Zoom mobile             | `viewport` configurado com `maximumScale: 1` e `userScalable: false` para comportamento de aplicativo no celular                                                                                            |
 
 ## Evidência específica da 2.3.1
 

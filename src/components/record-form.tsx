@@ -6,13 +6,17 @@ import GoalConditions, {
   draftConditions,
   parseConditions,
 } from "./goal-conditions";
-import { moneyInput, parseMoney } from "@/lib/finance/money";
+import { formatMoney, moneyInput, parseMoney } from "@/lib/finance/money";
 import DateControl from "./date-control";
 import SelectControl from "./select-control";
 import CategoryInput from "./category-input";
 import MoneyInput from "./money-input";
-import { today } from "@/lib/finance/dates";
+import { addMonths, today } from "@/lib/finance/dates";
 import { goalBlockers } from "@/lib/finance/goal-dependencies";
+import {
+  piggyBankTotalCents,
+  progressiveMonthlyTotalCents,
+} from "@/lib/finance/piggy-bank";
 export type FormState = {
   entity: Entity;
   record?: Record<string, unknown>;
@@ -139,6 +143,13 @@ export default function RecordForm({
   });
   const [ipca, setIpca] = useState("");
   const [fetchingIpca, setFetchingIpca] = useState(false);
+  const [goalModel, setGoalModel] = useState<"free" | "piggy" | "progressive">(
+    () => (state.preset?.goal_model === "piggy" ? "piggy" : "free"),
+  );
+  const [piggyMax, setPiggyMax] = useState("500");
+  const [progStart, setProgStart] = useState("100,00");
+  const [progStep, setProgStep] = useState("50,00");
+  const [progMonths, setProgMonths] = useState("12");
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const ref = useRef<HTMLDialogElement>(null);
@@ -601,6 +612,170 @@ export default function RecordForm({
           )}
           {e === "goals" && (
             <>
+              <div className="form-field">
+                <span>Formato da meta</span>
+                <SelectControl
+                  label="Formato da meta"
+                  allowEmpty={false}
+                  value={goalModel}
+                  onChange={(v) => {
+                    const nextModel = v as "free" | "piggy" | "progressive";
+                    setGoalModel(nextModel);
+                    if (nextModel === "piggy") {
+                      const n = Math.max(
+                        10,
+                        Math.min(1000, Number(piggyMax) || 500),
+                      );
+                      const total = piggyBankTotalCents(n);
+                      setValues((old) => ({
+                        ...old,
+                        name: old.name.trim() ? old.name : `Cofrinho 1 a ${n}`,
+                        target_cents: moneyInput(total),
+                        target_date: old.target_date || addMonths(today(), 12),
+                      }));
+                    }
+                  }}
+                  options={[
+                    ["free", "Meta tradicional (valor fixo)"],
+                    [
+                      "piggy",
+                      "Desafio do Cofrinho (cartela de 1 a 500 = R$ 125.250)",
+                    ],
+                    [
+                      "progressive",
+                      "Cofrinho mensal progressivo (guardar mais a cada mês)",
+                    ],
+                  ]}
+                />
+              </div>
+              {goalModel === "piggy" && (
+                <div className="goal-conditions stack">
+                  <div className="form-grid">
+                    <div className="form-field">
+                      <span>Tamanho da cartela do cofrinho</span>
+                      <SelectControl
+                        label="Tamanho da cartela do cofrinho"
+                        allowEmpty={false}
+                        value={piggyMax}
+                        onChange={(v) => {
+                          setPiggyMax(v);
+                          const n = Number(v) || 500;
+                          const total = piggyBankTotalCents(n);
+                          setValues((old) => ({
+                            ...old,
+                            name:
+                              !old.name.trim() || /^Cofrinho 1 a \d+$/i.test(old.name.trim())
+                                ? `Cofrinho 1 a ${n}`
+                                : old.name,
+                            target_cents: moneyInput(total),
+                          }));
+                        }}
+                        options={[
+                          ["500", "1 a 500 reais (Total: R$ 125.250,00)"],
+                          ["365", "1 a 365 reais (Total: R$ 66.795,00)"],
+                          ["200", "1 a 200 reais (Total: R$ 20.100,00)"],
+                          ["100", "1 a 100 reais (Total: R$ 5.050,00)"],
+                        ]}
+                      />
+                    </div>
+                  </div>
+                  <p className="form-help">
+                    Ao salvar, sua meta terá um retângulo interativo com os
+                    números de 1 a {piggyMax}. Conforme você reservar cada
+                    valor, basta clicar nos números para marcá-los.
+                  </p>
+                </div>
+              )}
+              {goalModel === "progressive" && (
+                <div className="goal-conditions stack">
+                  <div className="form-grid">
+                    <label className="form-field">
+                      <span>Guardar no 1º mês (R$)</span>
+                      <MoneyInput
+                        aria-label="Guardar no 1º mês (R$)"
+                        value={progStart}
+                        onValueChange={setProgStart}
+                      />
+                    </label>
+                    <label className="form-field">
+                      <span>Aumentar por mês (R$)</span>
+                      <MoneyInput
+                        aria-label="Aumentar por mês (R$)"
+                        value={progStep}
+                        onValueChange={setProgStep}
+                      />
+                    </label>
+                  </div>
+                  <div className="form-grid">
+                    <label className="form-field">
+                      <span>Durante quantos meses?</span>
+                      <input
+                        type="number"
+                        min={2}
+                        max={240}
+                        value={progMonths}
+                        onChange={(ev) => setProgMonths(ev.target.value)}
+                      />
+                    </label>
+                    <div className="form-field">
+                      <span>Aplicar cálculo progressivo</span>
+                      <button
+                        type="button"
+                        className="button secondary"
+                        onClick={() => {
+                          try {
+                            const s = parseMoney(progStart || "0,00");
+                            const step = parseMoney(progStep || "0,00");
+                            const m = Math.max(
+                              2,
+                              Math.min(240, Number(progMonths) || 12),
+                            );
+                            const total = progressiveMonthlyTotalCents(
+                              s,
+                              step,
+                              m,
+                            );
+                            setValues((old) => ({
+                              ...old,
+                              name: old.name.trim()
+                                ? old.name
+                                : `Cofrinho progressivo (${m} meses)`,
+                              target_cents: moneyInput(total),
+                              target_date: addMonths(today(), m),
+                            }));
+                          } catch {
+                            // Ignore invalid money format while typing
+                          }
+                        }}
+                      >
+                        Preencher meta progressiva
+                      </button>
+                    </div>
+                  </div>
+                  {(() => {
+                    try {
+                      const s = parseMoney(progStart || "0,00");
+                      const step = parseMoney(progStep || "0,00");
+                      const m = Math.max(
+                        2,
+                        Math.min(240, Number(progMonths) || 12),
+                      );
+                      const lastMonth = s + (m - 1) * step;
+                      const total = progressiveMonthlyTotalCents(s, step, m);
+                      return (
+                        <p className="form-help">
+                          Começando com {formatMoney(s)} no mês 1 e subindo{" "}
+                          {formatMoney(step)} por mês, no mês {m} você guarda{" "}
+                          {formatMoney(lastMonth)} e acumula{" "}
+                          <strong>{formatMoney(total)}</strong>.
+                        </p>
+                      );
+                    } catch {
+                      return null;
+                    }
+                  })()}
+                </div>
+              )}
               <div className="form-grid">
                 {field("target_cents", "Valor da meta (R$)")}
                 {field("target_date", "Data alvo", { type: "date" })}

@@ -950,6 +950,10 @@ describe("fase 2.3 — primeiros passos e decisões", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Lançamentos" }),
     ).toBeTruthy();
+    expect(
+      screen.queryByRole("region", { name: "Primeiros passos" }),
+    ).toBeNull();
+    await navigate("Visão geral");
     await user.click(
       screen.getByRole("button", { name: "Concluir primeiros passos" }),
     );
@@ -1272,5 +1276,73 @@ describe("fase 2.3.1 — caminhos de uso", () => {
         .getAllByRole("button", { name: /^Revisar e reservar para/ })
         .every((button) => (button as HTMLButtonElement).disabled),
     ).toBe(true);
+  });
+});
+
+describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
+  it("cria o cofrinho de 1 a 500 e marca números no retângulo interativo", async () => {
+    const user = userEvent.setup();
+    render(<FinanceApp demo />);
+    await navigate("Metas");
+    await user.click(screen.getByRole("button", { name: "Cofrinho 1 a 500" }));
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByLabelText("Nome")).toHaveProperty(
+      "value",
+      "Cofrinho 1 a 500",
+    );
+    expect(dialog.getByLabelText("Valor da meta (R$)")).toHaveProperty(
+      "value",
+      "125.250,00",
+    );
+    await user.click(dialog.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await user.click(
+      screen.getByRole("button", { name: "R$ 10 (disponível)" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "R$ 20 (disponível)" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: /Marcar no cofrinho/ }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "R$ 10 (já guardado)" }),
+      ).toBeTruthy(),
+    );
+    expect(
+      screen.getByRole("button", { name: "R$ 20 (já guardado)" }),
+    ).toBeTruthy();
+  });
+
+  it("simula aluguel de imóvel com caução de 3x o aluguel", async () => {
+    const user = userEvent.setup();
+    render(<Simulator />);
+    await chooseOption("O que você está planejando?", "Aluguel de imóvel");
+    await user.type(
+      screen.getByLabelText("Valor do aluguel mensal (R$)"),
+      "1500,00",
+    );
+    await user.type(
+      screen.getByLabelText("Renda líquida por mês (R$)"),
+      "5000,00",
+    );
+    await chooseOption(
+      "Garantia da locação (opcional)",
+      "Caução (depósito antecipado)",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Usar 3x o aluguel" }),
+    );
+    expect(screen.getByLabelText("Valor da caução (R$)")).toHaveProperty(
+      "value",
+      "4.500,00",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Ver se cabe no meu bolso" }),
+    );
+    expect(
+      screen.getByRole("region", { name: "Resultado da compra" }).textContent,
+    ).toContain("Caução na entrada");
   });
 });

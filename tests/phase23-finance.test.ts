@@ -5,6 +5,14 @@ import {
   type PurchaseInput,
 } from "../src/lib/finance/purchase";
 import {
+  piggyBankTotalCents,
+  progressiveMonthlyTotalCents,
+  formatPiggyBankNote,
+  extractMarkedNumbers,
+  inferPiggyBankSize,
+  isPiggyBankGoal,
+} from "../src/lib/finance/piggy-bank";
+import {
   goalBlockers,
   validateGoalGraph,
 } from "../src/lib/finance/goal-dependencies";
@@ -193,5 +201,84 @@ describe("metas com condições", () => {
     expect(() => validateGoalGraph(d.goals)).toThrow(/sua conta/);
     a.dependencies = [{ goal_id: a.id, minimum_cents: null }];
     expect(() => validateGoalGraph(d.goals)).toThrow(/ciclo/);
+  });
+});
+
+describe("fase 2.3.2 — aluguel de imóvel e cofrinho progressivo", () => {
+  it("simula aluguel com caução (depósito inicial) e seguro fiança (custo mensal)", () => {
+    const withDeposit = simulatePurchase({
+      ...scenario,
+      category: "rent",
+      price: 200000,
+      ongoing: 50000,
+      fees: 50000,
+      savings: 400000,
+      reserve: 100000,
+      rentGuarantee: "deposit",
+      deposit: 600000,
+    });
+    expect(withDeposit).toMatchObject({
+      fits: false,
+      price: 200000,
+      deposit: 600000,
+      total: 650000,
+      purchaseCashTarget: 650000,
+      missingCash: 350000,
+      monthsToSave: 18,
+      monthlyCommitment: 250000,
+    });
+
+    const withInsurance = simulatePurchase({
+      ...scenario,
+      category: "rent",
+      price: 80000,
+      ongoing: 20000,
+      fees: 0,
+      savings: 50000,
+      reserve: 10000,
+      rentGuarantee: "insurance",
+      rentInsurance: 15000,
+    });
+    expect(withInsurance).toMatchObject({
+      fits: true,
+      price: 80000,
+      rentInsurance: 15000,
+      monthlyCommitment: 115000,
+      remainingMonthly: 35000,
+      missingCash: 0,
+    });
+  });
+
+  it("calcula cartela do cofrinho de 1 a 500 (R$ 125.250,00) e extrai números marcados", () => {
+    expect(piggyBankTotalCents(500)).toBe(12525000);
+    expect(progressiveMonthlyTotalCents(10000, 5000, 12)).toBe(450000);
+    const note = formatPiggyBankNote([10, 1, 500, 1]);
+    expect(note).toBe("Cofrinho #1, #10, #500");
+    const marked = extractMarkedNumbers(
+      [
+        {
+          id: "c1",
+          user_id: "u",
+          goal_id: "g1",
+          account_id: "a1",
+          amount_cents: 51100,
+          date: "2026-10-28",
+          note,
+        },
+      ],
+      500,
+    );
+    expect([...marked.keys()]).toEqual([1, 10, 500]);
+    const goal = {
+      id: "g1",
+      user_id: "u",
+      name: "Cofrinho 1 a 500",
+      target_cents: 12525000,
+      target_date: "2027-10-28",
+      priority: 3 as const,
+      monthly_budget_cents: null,
+    };
+    expect(inferPiggyBankSize(goal)).toBe(500);
+    expect(isPiggyBankGoal(goal, [])).toBe(true);
   });
 });
