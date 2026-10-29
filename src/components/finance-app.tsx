@@ -65,6 +65,7 @@ import {
   sumCents,
 } from "@/lib/finance/money";
 import {
+  accountOverdraft,
   balance,
   overview,
   goalFunded,
@@ -1224,6 +1225,24 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                 <span>
                   VA/VR separado <strong>{value(stats.benefits)}</strong>
                 </span>
+                {stats.overdraftLimit > 0 && (
+                  <span>
+                    {stats.overdraftUsed > 0 ? (
+                      <>
+                        Cheque especial em uso{" "}
+                        <strong className="negative">
+                          {value(stats.overdraftUsed)}
+                        </strong>{" "}
+                        (restam {value(stats.overdraftAvailable)})
+                      </>
+                    ) : (
+                      <>
+                        Cheque especial disponível{" "}
+                        <strong>{value(stats.overdraftAvailable)}</strong>
+                      </>
+                    )}
+                  </span>
+                )}
               </div>
               <div className="two-column">
                 <section className="panel">
@@ -1449,7 +1468,8 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   {data.accounts.map((a) => {
                     const Icon = accountIcons[a.kind],
                       b = balance(a, data.transactions, asOf),
-                      r = reserved(a.id, data.contributions);
+                      r = reserved(a.id, data.contributions),
+                      od = accountOverdraft(a, b, r);
                     return (
                       <article className="panel account-card" key={a.id}>
                         <div className="section-head">
@@ -1466,7 +1486,11 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                         </div>
                         <p className="eyebrow">{accountNames[a.kind]}</p>
                         <h2>{a.name}</h2>
-                        <strong className="account-balance">{value(b)}</strong>
+                        <strong
+                          className={`account-balance ${b < 0 ? "negative" : ""}`}
+                        >
+                          {value(b)}
+                        </strong>
                         <div className="account-details">
                           <span>
                             Reservado para metas<strong>{value(r)}</strong>
@@ -1475,9 +1499,56 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                             {a.kind === "benefit"
                               ? "Uso restrito · VA/VR"
                               : "Livre de reservas"}
-                            <strong>{value(b - r)}</strong>
+                            <strong className={b - r < 0 ? "negative" : ""}>
+                              {value(b - r)}
+                            </strong>
                           </span>
                         </div>
+                        {od.hasOverdraft && (
+                          <div
+                            className={`overdraft-box ${od.usedCents > 0 ? "active" : ""}`}
+                          >
+                            <div className="overdraft-head">
+                              <span>
+                                {od.usedCents > 0
+                                  ? "Em uso do cheque especial"
+                                  : "Cheque especial contratado"}
+                              </span>
+                              <strong>
+                                {od.usedCents > 0
+                                  ? `${Math.round(od.usageRatio * 100)}% usado`
+                                  : "100% livre"}
+                              </strong>
+                            </div>
+                            <div
+                              className="overdraft-track"
+                              aria-label="Consumo do cheque especial"
+                            >
+                              <span
+                                style={{ width: `${od.usageRatio * 100}%` }}
+                              />
+                            </div>
+                            <div className="overdraft-metrics">
+                              <span>
+                                Usado do limite
+                                <strong
+                                  className={od.usedCents > 0 ? "negative" : ""}
+                                >
+                                  {value(od.usedCents)} de{" "}
+                                  {value(od.limitCents)}
+                                </strong>
+                              </span>
+                              <span>
+                                Limite disponível
+                                <strong>{value(od.remainingCents)}</strong>
+                              </span>
+                              <span>
+                                Fôlego total (saldo + limite)
+                                <strong>{value(od.totalAvailableCents)}</strong>
+                              </span>
+                            </div>
+                          </div>
+                        )}
                         <button
                           className="text-button"
                           onClick={() =>
@@ -2353,7 +2424,16 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     <tbody>
                       {report.accountSummaries.map((row) => (
                         <tr key={row.account.id}>
-                          <td>{row.account.name}</td>
+                          <td>
+                            <div>{row.account.name}</div>
+                            {row.overdraftLimit > 0 && (
+                              <small className="muted">
+                                {row.overdraftUsed > 0
+                                  ? `Cheque especial: ${value(row.overdraftUsed)} usado · ${value(row.overdraftRemaining)} livre`
+                                  : `Cheque especial livre: ${value(row.overdraftRemaining)}`}
+                              </small>
+                            )}
+                          </td>
                           <td>{value(row.income)}</td>
                           <td>{value(row.expense)}</td>
                           <td>{value(row.savedInMonth)}</td>

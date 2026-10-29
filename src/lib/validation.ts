@@ -15,12 +15,32 @@ const date = z
   );
 const id = z.uuid();
 const nullableId = id.nullable();
-export const accountSchema = z.object({
-  name: text(80),
-  kind: z.enum(["checking", "cash", "benefit", "investment"]),
-  opening_cents: cents,
-  opening_date: date,
-});
+export const accountSchema = z
+  .object({
+    name: text(80),
+    kind: z.enum(["checking", "cash", "benefit", "investment"]),
+    opening_cents: cents,
+    opening_date: date,
+    overdraft_cents: cents.nonnegative().optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.kind !== "checking" && (v.overdraft_cents ?? 0) > 0)
+      ctx.addIssue({
+        code: "custom",
+        message: "Cheque especial está disponível apenas para conta corrente.",
+        path: ["overdraft_cents"],
+      });
+    if (
+      (v.overdraft_cents ?? 0) > 0 &&
+      v.opening_cents < -(v.overdraft_cents ?? 0)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "O saldo inicial negativo não pode ultrapassar o limite do cheque especial.",
+        path: ["opening_cents"],
+      });
+  });
 export const goalSchema = z.object({
   name: text(80),
   target_cents: positive,

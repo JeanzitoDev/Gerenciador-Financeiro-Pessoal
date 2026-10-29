@@ -166,6 +166,35 @@ describe.sequential("fase 2.3 — integridade e migração", () => {
       await rows(`select opening_cents from accounts where id='${bank}'`),
     ).toEqual([{ opening_cents: 1000000 }]);
   });
+  it("2.3.4 adiciona cheque especial e consome o limite quando despesa paga supera o saldo inicial", async () => {
+    const migration234 = readFileSync(
+      "supabase/migrations/202610290006_phase234.sql",
+      "utf8",
+    );
+    await db.exec("reset role");
+    await db.exec(migration234);
+    await user(A);
+    const odAcc = "77777777-7777-4777-8777-777777777777";
+    await db.exec(
+      `insert into accounts(id,user_id,name,kind,opening_cents,opening_date,overdraft_cents) values('${odAcc}','${A}','Conta com Limite','checking',30000,'2020-01-01',100000)`,
+    );
+    // Conta que não é corrente não pode ter cheque especial > 0
+    await expect(
+      db.exec(
+        `insert into accounts(user_id,name,kind,opening_cents,opening_date,overdraft_cents) values('${A}','Carteira Inválida','cash',1000,'2020-01-01',50000)`,
+      ),
+    ).rejects.toThrow();
+    // Despesa paga de R$ 800,00 em conta com R$ 300,00 de saldo inicial consome R$ 500,00 do cheque especial de R$ 1.000,00
+    await db.exec(
+      `insert into transactions(user_id,kind,description,amount_cents,date,status,source_account_id) values('${A}','expense','Gasto no cheque especial',80000,(now() at time zone 'America/Sao_Paulo')::date,'posted','${odAcc}')`,
+    );
+    // Outra despesa de R$ 600,00 ultrapassaria o limite restante de R$ 500,00 e deve ser recusada pelo trigger
+    await expect(
+      db.exec(
+        `insert into transactions(user_id,kind,description,amount_cents,date,status,source_account_id) values('${A}','expense','Estouro do limite',60000,(now() at time zone 'America/Sao_Paulo')::date,'posted','${odAcc}')`,
+      ),
+    ).rejects.toThrow(/cheque especial/);
+  });
   it("apagar usuário com grafo continua atômico e preserva a outra conta", async () => {
     await expect(
       db.exec(`select delete_account_completely('${A}')`),

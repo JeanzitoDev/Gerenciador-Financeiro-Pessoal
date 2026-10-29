@@ -1,14 +1,23 @@
-# Validação · Meu Norte 2.3.3
+# Validação · Meu Norte 2.3.4
 
-Base local: v2.3.2. Esta entrega evolui a base para a **v2.3.3**, preservando os dados, regras financeiras e migrações anteriores.
+Base local: v2.3.3. Esta entrega evolui a base para a **v2.3.4**, preservando os dados, regras financeiras e migrações anteriores.
 
 ## Resultado local
 
-- `npm test`: **177 testes em 15 arquivos aprovados**.
+- `npm test`: **180 testes em 15 arquivos aprovados**.
 - `npm run typecheck`: geração de tipos e TypeScript aprovados.
 - `npm run build`: produção compilada, incluindo a rota pública `/privacidade` atualizada.
 - Node.js 24.19.0 e Next.js 16.4.2; nenhuma dependência nova ou serviço pago adicionado.
-- PostgreSQL local com todas as migrations anteriores e dados existentes aprovados.
+- PostgreSQL local com todas as migrations anteriores (incluindo `202610290006_phase234.sql`) e dados existentes aprovados.
+
+## Evidência específica da 2.3.4
+
+| Área                          | Verificação                                                                                                                                                                                    |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cadastro de cheque especial   | Opção `"Esta conta possui limite de cheque especial"` exibida em contas correntes (`kind = 'checking'`), com campo de limite em reais, prévia automática de limite consumido/disponível e seletor de sinal |
+| Consumo e recomposição        | Quando uma despesa paga supera o saldo próprio da conta, o excedente consome o cheque especial (`accountOverdraft`), recompondo o limite quando novas receitas entram e barrando excessos além de `saldo + limite` |
+| Painéis e Relatórios          | Cartão da conta corrente exibe barra e métricas de uso do limite (`Usado do limite`, `Limite disponível` e `Fôlego total`); `Visão geral` e `Relatórios` mostram o resumo do cheque especial   |
+| Banco de dados (PGlite / SQL) | Coluna `overdraft_cents` adicionada em `public.accounts` com `check` restrito a `checking` e validação na trigger `public.check_finance_integrity()` impedindo saldo abaixo de `-overdraft_cents` |
 
 ## Evidência específica da 2.3.3
 

@@ -2179,3 +2179,83 @@ input[type="radio"] {
     width: 100%;
   }
 }
+
+/* Phase 2.3.4 — Overdraft limit (Cheque Especial) on Checking Accounts */
+.account-sign-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 4px 0;
+}
+.account-sign-row > span {
+  font-size: 13px;
+}
+.account-balance.negative {
+  color: var(--rose);
+}
+.overdraft-box {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.overdraft-box.active {
+  border-color: color-mix(in srgb, var(--rose) 38%, var(--line));
+  background: color-mix(in srgb, var(--rose) 7%, var(--panel-soft));
+}
+.overdraft-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.overdraft-head > span {
+  color: var(--muted);
+  font-weight: 500;
+}
+.overdraft-head > strong {
+  font-weight: 650;
+}
+.overdraft-box.active .overdraft-head > strong {
+  color: var(--rose);
+}
+.overdraft-track {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.overdraft-track > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--rose);
+  transition: width 0.5s var(--ease-spring);
+}
+.overdraft-metrics {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.overdraft-metrics > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+}
+.overdraft-metrics > span > strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.overdraft-metrics > span > strong.negative {
+  color: var(--rose);
+}
+

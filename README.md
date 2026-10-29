@@ -1,10 +1,10 @@
-# Meu Norte · v2.3.3
+# Meu Norte · v2.3.4
 
 Gerenciador financeiro pessoal em **Next.js, TypeScript, Tailwind CSS, Supabase Auth e PostgreSQL**. PWA com finanças online, BRL em centavos e dados separados por usuário.
 
 ## Atualizar a versão já publicada
 
-Para quem está na **v2.3.2** ou **v2.3.1**, siga **[a atualização 2.3.3](docs/FASE-2.3.3.md)**: nenhuma migration nova é necessária; basta atualizar o código e fazer o deploy. Para quem está na **v2.3.0**, siga **[a atualização 2.3.1](docs/FASE-2.3.1.md)** e aplique `202610220005_phase231.sql`. Quem está na 2.2.0/2.2.1 precisa aplicar também a migration da fase 2.3, conforme o guia.
+Para quem está na **v2.3.3**, **v2.3.2** ou **v2.3.1**, siga **[a atualização 2.3.4](docs/FASE-2.3.4.md)** e aplique a migração incremental `supabase/migrations/202610290006_phase234.sql` no SQL Editor do Supabase antes do deploy. Para quem está na **v2.3.0**, aplique antes `202610220005_phase231.sql`. Quem está na 2.2.0/2.2.1 precisa aplicar também a migration da fase 2.3, conforme o guia.
 
 **Privacidade (Beta):** esta é uma versão de testes (beta) sem criptografia de ponta a ponta; as contas têm permissões por usuário (RLS), mas o administrador possui acesso técnico ao banco. A versão inclui aviso público detalhado em `/privacidade` sobre a fase beta e o plano de criptografia e chaves de acesso para a versão Produto. Leia [a análise de uso e criptografia](docs/USABILIDADE-E-PRIVACIDADE.md).
 
@@ -50,7 +50,7 @@ Nunca envie `.env.local` ao Git. A chave pública é diferente da chave privada.
 
 ## Funcionalidades
 
-- Contas, receitas, despesas e recorrências. Confirmação Recebi/Paguei em Lançamentos; registro automático é opcional. Dinheiro guardado e VA/VR têm tratamento próprio.
+- Contas, receitas, despesas e recorrências, com opção de **limite de cheque especial** nas contas correntes (consumo automático do limite quando despesas pagas superam o saldo em conta). Confirmação Recebi/Paguei em Lançamentos; registro automático é opcional. Dinheiro guardado e VA/VR têm tratamento próprio.
 - Metas com aportes, conclusão, condições entre objetivos, **Desafio do Cofrinho (cartela interativa de 1 a 500 = R$ 125.250)** e **Cofrinho mensal progressivo**. Planejamento distribui o orçamento entre as metas disponíveis e explica as que aguardam.
 - **Cabe no meu bolso?**: compras, projetos em geral e **aluguel de imóvel** (com caução ou seguro fiança), preço desejado ou teto de gasto, à vista ou parcelado, entrada, custos de uso, folga mensal, juros, prazo para juntar e criação de meta.
 - Referências gratuitas de juros de veículos/imóveis pelo servidor do app, sem enviar dados pessoais ao provedor. Price/SAC, fonte/data e taxa manual como alternativa.

@@ -80,12 +80,14 @@ const emptyDefaults = {
   first_due_date: today(),
   monthly_rate: "",
   cet_annual_rate: "",
+  overdraft_cents: "",
 };
 const currencyKeys = [
   "principal_cents",
   "installment_cents",
   "amount_cents",
   "opening_cents",
+  "overdraft_cents",
   "gross_cents",
   "deductions_cents",
   "target_cents",
@@ -155,6 +157,12 @@ export default function RecordForm({
   const [progStart, setProgStart] = useState("100,00");
   const [progStep, setProgStep] = useState("50,00");
   const [progMonths, setProgMonths] = useState("12");
+  const [hasOverdraft, setHasOverdraft] = useState(
+    () =>
+      Number(
+        state.record?.overdraft_cents ?? state.preset?.overdraft_cents ?? 0,
+      ) > 0,
+  );
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const ref = useRef<HTMLDialogElement>(null);
@@ -284,14 +292,27 @@ export default function RecordForm({
             account_id: v.account_id || null,
           };
           break;
-        case "accounts":
+        case "accounts": {
+          const overdraft =
+            v.kind === "checking" && hasOverdraft
+              ? (money("overdraft_cents") ?? 0)
+              : 0;
+          if (v.kind === "checking" && hasOverdraft && overdraft <= 0)
+            throw new Error(
+              "Informe um limite de cheque especial maior que zero.",
+            );
           payload = {
             name: v.name,
             kind: v.kind,
             opening_cents: money("opening_cents"),
             opening_date: v.opening_date,
+            ...(overdraft > 0 ||
+            Number(state.record?.overdraft_cents ?? 0) > 0
+              ? { overdraft_cents: overdraft }
+              : {}),
           };
           break;
+        }
         case "goals": {
           const fallbackName =
             goalModel === "piggy"
@@ -441,6 +462,122 @@ export default function RecordForm({
                   max: today(),
                 })}
               </div>
+              {values.kind === "checking" && (
+                <>
+                  <div className="account-sign-row">
+                    <span className="muted">Situação do saldo inicial:</span>
+                    <div className="segmented compact">
+                      <button
+                        type="button"
+                        className={
+                          !values.opening_cents.trim().startsWith("-")
+                            ? "selected"
+                            : ""
+                        }
+                        onClick={() =>
+                          update(
+                            "opening_cents",
+                            values.opening_cents.replace(/^-+/, ""),
+                          )
+                        }
+                      >
+                        Saldo positivo (+)
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          values.opening_cents.trim().startsWith("-")
+                            ? "selected"
+                            : ""
+                        }
+                        onClick={() => {
+                          const clean = values.opening_cents.replace(/^-+/, "");
+                          if (clean && clean !== "0,00" && clean !== "0")
+                            update("opening_cents", `-${clean}`);
+                        }}
+                      >
+                        No cheque especial (−)
+                      </button>
+                    </div>
+                  </div>
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={hasOverdraft}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setHasOverdraft(checked);
+                        if (!checked) update("overdraft_cents", "");
+                      }}
+                    />
+                    <span>Esta conta possui limite de cheque especial</span>
+                  </label>
+                  {hasOverdraft && (
+                    <div className="goal-conditions">
+                      {field(
+                        "overdraft_cents",
+                        "Limite do cheque especial (R$)",
+                        {
+                          placeholder: "Ex.: 1.500,00",
+                        },
+                      )}
+                      {(() => {
+                        let opening = 0,
+                          limit = 0;
+                        try {
+                          opening = parseMoney(values.opening_cents || "0,00");
+                        } catch {
+                          opening = 0;
+                        }
+                        try {
+                          limit = values.overdraft_cents
+                            ? parseMoney(values.overdraft_cents)
+                            : 0;
+                        } catch {
+                          limit = 0;
+                        }
+                        if (limit <= 0)
+                          return (
+                            <p className="form-help">
+                              Informe quanto o banco disponibiliza de cheque
+                              especial. Quando uma despesa paga ultrapassar o
+                              saldo em conta, a diferença consumirá este limite.
+                            </p>
+                          );
+                        const used =
+                          opening < 0 ? Math.min(limit, Math.abs(opening)) : 0;
+                        const remaining = Math.max(
+                          0,
+                          limit - Math.max(0, -opening),
+                        );
+                        return (
+                          <p className="form-help">
+                            {opening < 0 ? (
+                              <>
+                                O saldo inicial negativo já consome{" "}
+                                <strong>{formatMoney(used)}</strong> do cheque
+                                especial · Restam{" "}
+                                <strong>{formatMoney(remaining)}</strong> de
+                                limite disponível.
+                              </>
+                            ) : (
+                              <>
+                                Se uma despesa paga for maior que o saldo em
+                                conta (<strong>{formatMoney(opening)}</strong>),
+                                a diferença consumirá automaticamente até{" "}
+                                <strong>{formatMoney(limit)}</strong> do cheque
+                                especial (fôlego total de{" "}
+                                <strong>{formatMoney(opening + limit)}</strong>
+                                ).
+                              </>
+                            )}
+                          </p>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </>
+              )}
               <p className="form-help">
                 Informe o saldo na data de início. Os próximos movimentos
                 atualizam o saldo automaticamente.

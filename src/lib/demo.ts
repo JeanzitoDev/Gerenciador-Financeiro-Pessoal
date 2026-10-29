@@ -29,6 +29,7 @@ export function demoData(): FinanceData {
       kind: "checking",
       opening_cents: 450000,
       opening_date: previous,
+      overdraft_cents: 150000,
     },
     {
       ...owned,
@@ -283,6 +284,12 @@ export function validateDemo(data: FinanceData): void {
     const value = balance(a, data.transactions, asOf);
     if ((a.kind === "benefit" || a.kind === "investment") && value < 0)
       throw new Error("Benefício ou investimento sem saldo suficiente.");
+    const overdraftLimit =
+      a.kind === "checking" ? Math.max(0, a.overdraft_cents ?? 0) : 0;
+    if (overdraftLimit > 0 && value < -overdraftLimit)
+      throw new Error(
+        "Saldo insuficiente: o lançamento ultrapassa o saldo e o limite do cheque especial desta conta.",
+      );
     if (reserved(a.id, data.contributions) > Math.max(0, value))
       throw new Error("Saldo insuficiente: ajuste as reservas das metas.");
   }

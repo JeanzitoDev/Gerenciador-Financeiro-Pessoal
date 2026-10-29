@@ -16,9 +16,15 @@ import {
   goalBlockers,
   validateGoalGraph,
 } from "../src/lib/finance/goal-dependencies";
-import { planGoals } from "../src/lib/finance/engine";
+import {
+  accountOverdraft,
+  balance,
+  overview,
+  planGoals,
+} from "../src/lib/finance/engine";
 import { buildMonthlyReport } from "../src/lib/finance/reports";
-import { demoData } from "../src/lib/demo";
+import { demoData, mutateDemo } from "../src/lib/demo";
+import { accountSchema } from "../src/lib/validation";
 import { today } from "../src/lib/finance/dates";
 const scenario: PurchaseInput = {
   mode: "purchase",
@@ -309,5 +315,86 @@ describe("fase 2.3.2 — aluguel de imóvel e cofrinho progressivo", () => {
     });
     expect(r12.periods).toHaveLength(12);
     expect(r12.accountSummaries).toHaveLength(1);
+  });
+
+  it("consome o limite do cheque especial quando a despesa paga ultrapassa o saldo inicial", () => {
+    expect(
+      accountSchema.safeParse({
+        name: "Carteira",
+        kind: "cash",
+        opening_cents: 1000,
+        opening_date: "2026-01-01",
+        overdraft_cents: 50000,
+      }).success,
+    ).toBe(false);
+    expect(
+      accountSchema.safeParse({
+        name: "Conta Corrente",
+        kind: "checking",
+        opening_cents: -120000,
+        opening_date: "2026-01-01",
+        overdraft_cents: 100000,
+      }).success,
+    ).toBe(false);
+
+    let d = demoData();
+    d = mutateDemo(d, "accounts", "POST", {
+      name: "Conta Cheque Especial",
+      kind: "checking",
+      opening_cents: 30000, // R$ 300,00
+      opening_date: "2026-01-01",
+      overdraft_cents: 100000, // R$ 1.000,00 de limite
+    });
+    const acc = d.accounts.find((a) => a.name === "Conta Cheque Especial")!;
+    expect(accountOverdraft(acc, balance(acc, d.transactions, today()))).toEqual(
+      {
+        hasOverdraft: true,
+        limitCents: 100000,
+        usedCents: 0,
+        remainingCents: 100000,
+        exceededCents: 0,
+        totalAvailableCents: 130000,
+        usageRatio: 0,
+      },
+    );
+
+    // Despesa paga de R$ 800,00 (maior que o saldo inicial de R$ 300,00) -> consome R$ 500,00 do cheque especial
+    d = mutateDemo(d, "transactions", "POST", {
+      kind: "expense",
+      description: "Conserto urgente",
+      amount_cents: 80000,
+      date: today(),
+      status: "posted",
+      source_account_id: acc.id,
+      target_account_id: null,
+      category: "Imprevistos",
+    });
+    const currentBal = balance(acc, d.transactions, today());
+    expect(currentBal).toBe(-50000);
+    expect(accountOverdraft(acc, currentBal)).toEqual({
+      hasOverdraft: true,
+      limitCents: 100000,
+      usedCents: 50000,
+      remainingCents: 50000,
+      exceededCents: 0,
+      totalAvailableCents: 50000,
+      usageRatio: 0.5,
+    });
+    const ov = overview(d, today().slice(0, 7), today());
+    expect(ov.overdraftUsed).toBe(50000);
+
+    // Despesa que ultrapassa o limite restante de R$ 500,00 deve ser bloqueada
+    expect(() =>
+      mutateDemo(d, "transactions", "POST", {
+        kind: "expense",
+        description: "Acima do cheque especial",
+        amount_cents: 60000,
+        date: today(),
+        status: "posted",
+        source_account_id: acc.id,
+        target_account_id: null,
+        category: "Outros",
+      }),
+    ).toThrow(/cheque especial/);
   });
 });

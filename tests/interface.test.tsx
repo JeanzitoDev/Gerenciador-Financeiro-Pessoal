@@ -1376,4 +1376,44 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
       screen.getByRole("region", { name: "Resultado da compra" }).textContent,
     ).toContain("Caução na entrada");
   });
+
+  it("permite criar conta corrente com cheque especial e consome o limite quando despesa paga supera o saldo inicial", async () => {
+    const user = userEvent.setup();
+    render(<FinanceApp demo />);
+    await navigate("Minhas contas");
+    await user.click(screen.getByRole("button", { name: "Nova conta" }));
+    const dialog = within(screen.getByRole("dialog"));
+    await user.type(dialog.getByLabelText("Nome"), "Banco Especial");
+    const opening = dialog.getByLabelText("Saldo inicial (R$)");
+    await user.clear(opening);
+    await user.type(opening, "300,00");
+    await user.click(
+      dialog.getByLabelText("Esta conta possui limite de cheque especial"),
+    );
+    await user.type(
+      dialog.getByLabelText("Limite do cheque especial (R$)"),
+      "1000,00",
+    );
+    await user.click(dialog.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    const card = screen
+      .getByRole("heading", { name: "Banco Especial" })
+      .closest("article")!;
+    expect(card.textContent).toContain("Cheque especial contratado");
+    expect(card.textContent).toContain("100% livre");
+
+    // Registrar despesa paga de R$ 800,00 nesta conta (saldo inicial R$ 300,00 -> consome R$ 500,00 do cheque especial)
+    await user.click(
+      within(card).getByRole("button", { name: "Registrar movimento" }),
+    );
+    const txDialog = within(screen.getByRole("dialog"));
+    await user.type(txDialog.getByLabelText("Descrição"), "Manutenção carro");
+    await user.type(txDialog.getByLabelText("Valor líquido (R$)"), "800,00");
+    await user.click(txDialog.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    expect(card.textContent).toContain("Em uso do cheque especial");
+    expect(card.textContent).toContain("50% usado");
+  });
 });

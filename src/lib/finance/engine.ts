@@ -28,6 +28,45 @@ export function reserved(
       .map((c) => c.amount_cents),
   );
 }
+export interface OverdraftSummary {
+  hasOverdraft: boolean;
+  limitCents: number;
+  usedCents: number;
+  remainingCents: number;
+  exceededCents: number;
+  totalAvailableCents: number;
+  usageRatio: number;
+}
+export function accountOverdraft(
+  account: Account,
+  currentBalanceCents: number,
+  reservedCents = 0,
+): OverdraftSummary {
+  const limitCents =
+    account.kind === "checking"
+      ? Math.max(0, account.overdraft_cents ?? 0)
+      : 0;
+  const hasOverdraft = limitCents > 0;
+  const deficit = Math.max(0, -currentBalanceCents);
+  const usedCents = hasOverdraft ? Math.min(limitCents, deficit) : 0;
+  const remainingCents = hasOverdraft ? Math.max(0, limitCents - deficit) : 0;
+  const exceededCents = hasOverdraft
+    ? Math.max(0, deficit - limitCents)
+    : deficit;
+  const freeOwnCents = Math.max(0, currentBalanceCents - reservedCents);
+  const totalAvailableCents =
+    currentBalanceCents >= 0 ? sumCents([freeOwnCents, limitCents]) : remainingCents;
+  const usageRatio = hasOverdraft ? Math.min(1, deficit / limitCents) : 0;
+  return {
+    hasOverdraft,
+    limitCents,
+    usedCents,
+    remainingCents,
+    exceededCents,
+    totalAvailableCents,
+    usageRatio,
+  };
+}
 export function goalFunded(
   goalId: string,
   contributions: Contribution[],
@@ -75,6 +114,20 @@ export function overview(data: FinanceData, month: string, asOf: string) {
           reserved(a.id, data.contributions),
       ),
   );
+  const checkingOverdrafts = data.accounts
+    .filter((a) => a.kind === "checking")
+    .map((a) =>
+      accountOverdraft(
+        a,
+        balance(a, data.transactions, asOf),
+        reserved(a.id, data.contributions),
+      ),
+    );
+  const overdraftLimit = sumCents(checkingOverdrafts.map((o) => o.limitCents));
+  const overdraftUsed = sumCents(checkingOverdrafts.map((o) => o.usedCents));
+  const overdraftAvailable = sumCents(
+    checkingOverdrafts.map((o) => o.remainingCents),
+  );
   return {
     income,
     expense,
@@ -84,6 +137,9 @@ export function overview(data: FinanceData, month: string, asOf: string) {
     assigned,
     free: sumCents([assets, -assigned]),
     liquid,
+    overdraftLimit,
+    overdraftUsed,
+    overdraftAvailable,
   };
 }
 export type PlanningStrategy = "date" | "term" | "budget";

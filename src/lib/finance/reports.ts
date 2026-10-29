@@ -1,6 +1,6 @@
 import type { Account, Entry, FinanceData } from "../types";
 import { addMonths, monthLabel } from "./dates";
-import { balance, reserved } from "./engine";
+import { accountOverdraft, balance, reserved } from "./engine";
 import { sumCents } from "./money";
 
 export interface ReportCategoryRow {
@@ -27,6 +27,9 @@ export interface AccountMonthlyRow {
   balance: number;
   reserved: number;
   available: number;
+  overdraftLimit: number;
+  overdraftUsed: number;
+  overdraftRemaining: number;
 }
 
 export interface PeriodReportRow {
@@ -241,6 +244,7 @@ export function buildMonthlyReport(
       const accSummary = summarizeMonth(data, month, asOf, account.id);
       const currentBalance = balance(account, data.transactions, asOf);
       const currentReserved = reserved(account.id, data.contributions);
+      const od = accountOverdraft(account, currentBalance, currentReserved);
       return {
         account,
         income: accSummary.income,
@@ -249,6 +253,9 @@ export function buildMonthlyReport(
         balance: currentBalance,
         reserved: currentReserved,
         available: currentBalance - currentReserved,
+        overdraftLimit: od.limitCents,
+        overdraftUsed: od.usedCents,
+        overdraftRemaining: od.remainingCents,
       };
     },
   );

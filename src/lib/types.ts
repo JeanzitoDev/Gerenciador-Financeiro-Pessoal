@@ -11,6 +11,7 @@ export interface Account extends Owned {
   kind: AccountKind;
   opening_cents: number;
   opening_date: string;
+  overdraft_cents?: number;
 }
 export interface Entry extends Owned {
   kind: EntryKind;
