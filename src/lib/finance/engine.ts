@@ -114,10 +114,12 @@ export function overview(data: FinanceData, month: string, asOf: string) {
   const liquid = sumCents(
     data.accounts
       .filter((a) => a.kind === "checking" || a.kind === "cash")
-      .map(
-        (a) =>
+      .map((a) =>
+        Math.max(
+          0,
           balance(a, data.transactions, asOf) -
-          reserved(a.id, data.contributions),
+            reserved(a.id, data.contributions),
+        ),
       ),
   );
   const checkingOverdrafts = data.accounts

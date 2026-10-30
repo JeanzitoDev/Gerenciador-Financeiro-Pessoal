@@ -2398,4 +2398,17 @@ input[type="radio"] {
 .goal-conditions > .form-help {
   margin: 4px 0 0;
 }
+.overview-metrics {
+  font-size: 13px;
+  line-height: 1.5;
+  gap: 12px 20px;
+}
+.overview-metrics strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.overview-metrics .dot {
+  width: 8px;
+  height: 8px;
+}
 

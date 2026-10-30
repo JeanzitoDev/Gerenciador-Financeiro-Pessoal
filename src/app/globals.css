@@ -879,7 +879,7 @@ legend {
   justify-content: space-between;
   gap: 14px;
   padding: 20px 0 25px;
-  font-size: 9px;
+  font-size: 13px;
   color: var(--muted);
   flex-wrap: wrap;
 }
@@ -890,7 +890,8 @@ legend {
 }
 .overview-metrics strong {
   color: var(--text);
-  font-size: 10px;
+  font-size: 14px;
+  font-weight: 600;
 }
 .dot {
   display: inline-block;
