@@ -157,6 +157,50 @@ describe("saldos e relatórios", () => {
       liquid: 9000,
     });
   });
+  it("exibe o que restou disponível quando despesas consomem o cheque especial", () => {
+    const data: FinanceData = {
+      accounts: [
+        {
+          id: "c1",
+          user_id: "u",
+          name: "Conta Principal",
+          kind: "checking",
+          opening_cents: 9909,
+          opening_date: "2026-10-01",
+          overdraft_cents: 10000,
+        },
+      ],
+      transactions: [
+        entry({
+          id: "exp1",
+          kind: "expense",
+          source_account_id: "c1",
+          target_account_id: null,
+          amount_cents: 18056,
+          date: "2026-10-15",
+        }),
+      ],
+      contributions: [],
+      goals: [],
+      investments: [],
+      recurrences: [],
+      profile: {
+        user_id: "u",
+        display_name: "",
+        theme: "light",
+        accent: "violet",
+        background: "plain",
+      },
+    };
+    expect(overview(data, "2026-10", "2026-10-30")).toMatchObject({
+      expense: 18056,
+      free: 1853,
+      liquid: 1853,
+      overdraftLimit: 10000,
+      overdraftUsed: 8147,
+      overdraftAvailable: 1853,
+    });
+  });
 });
 describe("metas e simulação", () => {
   const goals: Goal[] = [

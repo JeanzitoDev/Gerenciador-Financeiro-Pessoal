@@ -1478,6 +1478,7 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
 
     expect(card.textContent).toContain("Em uso do cheque especial");
     expect(card.textContent).toContain("50% usado");
+    expect(card.textContent).toContain("R$\u00a0500,00");
     expect(card.textContent).toContain(
       "Novas entradas compensam o limite até a conta chegar no zero novamente.",
     );

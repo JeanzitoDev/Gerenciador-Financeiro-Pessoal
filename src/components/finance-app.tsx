@@ -1172,7 +1172,9 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   </div>
                   <strong className="hero-value">{value(stats.free)}</strong>
                   <p>
-                    Seu saldo nas contas, descontando o reservado para metas.
+                    {stats.overdraftUsed > 0
+                      ? `Restante disponível considerando o cheque especial (${value(stats.overdraftUsed)} em uso).`
+                      : "Seu saldo nas contas, descontando o reservado para metas."}
                   </p>
                   <div className="hero-footer">
                     <span>
@@ -1469,7 +1471,9 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     const Icon = accountIcons[a.kind],
                       b = balance(a, data.transactions, asOf),
                       r = reserved(a.id, data.contributions),
-                      od = accountOverdraft(a, b, r);
+                      od = accountOverdraft(a, b, r),
+                      displayBalance = od.effectiveBalanceCents,
+                      freeBalance = displayBalance - r;
                     return (
                       <article className="panel account-card" key={a.id}>
                         <div className="section-head">
@@ -1487,9 +1491,9 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                         <p className="eyebrow">{accountNames[a.kind]}</p>
                         <h2>{a.name}</h2>
                         <strong
-                          className={`account-balance ${b < 0 ? "negative" : ""}`}
+                          className={`account-balance ${displayBalance < 0 ? "negative" : ""}`}
                         >
-                          {value(b)}
+                          {value(displayBalance)}
                         </strong>
                         <div className="account-details">
                           <span>
@@ -1499,8 +1503,10 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                             {a.kind === "benefit"
                               ? "Uso restrito · VA/VR"
                               : "Livre de reservas"}
-                            <strong className={b - r < 0 ? "negative" : ""}>
-                              {value(b - r)}
+                            <strong
+                              className={freeBalance < 0 ? "negative" : ""}
+                            >
+                              {value(freeBalance)}
                             </strong>
                           </span>
                         </div>
