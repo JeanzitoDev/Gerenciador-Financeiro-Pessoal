@@ -20,6 +20,12 @@ import {
   investmentReturn,
 } from "../src/lib/finance/engine";
 import { csvCell } from "../src/lib/finance/csv";
+import {
+  calculateFirstDueDate,
+  buildCreditCardSchedule,
+  creditCardSummary,
+  formatCreditCardExternalId,
+} from "../src/lib/finance/credit-cards";
 import type { Account, Entry, FinanceData, Goal } from "../src/lib/types";
 const a: Account = {
   id: "a",
@@ -263,5 +269,91 @@ describe("metas e simulação", () => {
   it("neutraliza fórmulas CSV", () => {
     expect(csvCell('=HYPERLINK("x")')).toBe('"\'=HYPERLINK(""x"")"');
     expect(csvCell("Normal")).toBe('"Normal"');
+  });
+  it("calcula vencimentos de cartão de crédito e segrega das contas bancárias", () => {
+    // Cartão fecha dia 8 e vence dia 15
+    expect(calculateFirstDueDate("2026-10-05", 15, 8)).toBe("2026-10-15");
+    expect(calculateFirstDueDate("2026-10-08", 15, 8)).toBe("2026-11-15");
+
+    const schedule = buildCreditCardSchedule({
+      purchaseDate: "2026-10-10",
+      dueDay: 15,
+      closingDay: 8,
+      totalInstallments: 3,
+      installmentCents: 20000,
+    });
+    expect(schedule.firstDueDate).toBe("2026-11-15");
+    expect(schedule.lastDueDate).toBe("2027-01-15");
+    expect(schedule.totalCents).toBe(60000);
+    expect(schedule.items.map((r) => r.dueDate)).toEqual([
+      "2026-11-15",
+      "2026-12-15",
+      "2027-01-15",
+    ]);
+
+    const card: Account = {
+      id: "cc1",
+      user_id: "u",
+      name: "Nubank Ultravioleta",
+      kind: "credit_card",
+      institution: "Nubank",
+      opening_cents: 0,
+      opening_date: "2026-10-01",
+      credit_limit_cents: 500000,
+      closing_day: 8,
+      due_day: 15,
+    };
+
+    const entries: Entry[] = schedule.items.map((row) =>
+      entry({
+        id: `cc-row-${row.number}`,
+        kind: "expense",
+        description: `TV (${row.number}/${row.total})`,
+        amount_cents: row.amountCents,
+        date: row.dueDate,
+        source_account_id: card.id,
+        target_account_id: null,
+        status: "planned",
+        external_id: formatCreditCardExternalId({
+          groupId: "g1",
+          installmentNumber: row.number,
+          totalInstallments: row.total,
+          purchaseDate: "2026-10-10",
+          dueDate: row.dueDate,
+        }),
+      }),
+    );
+
+    const summary = creditCardSummary(card, entries, "2026-11", "2026-11-01");
+    expect(summary.limitCents).toBe(500000);
+    expect(summary.usedCents).toBe(60000);
+    expect(summary.availableCents).toBe(440000);
+    expect(summary.currentInvoice.totalCents).toBe(20000);
+    expect(summary.currentInvoice.openCents).toBe(20000);
+
+    const data: FinanceData = {
+      accounts: [a, card],
+      transactions: entries,
+      contributions: [],
+      goals: [],
+      investments: [],
+      recurrences: [],
+      profile: {
+        user_id: "u",
+        display_name: "",
+        theme: "light",
+        accent: "violet",
+        background: "plain",
+      },
+    };
+    const ov = overview(data, "2026-11", "2026-11-30");
+    // Saldo da conta bancária (10000) permanece 100% segregado das faturas do cartão
+    expect(ov.free).toBe(10000);
+    expect(ov.liquid).toBe(10000);
+    expect(ov.expense).toBe(0);
+    expect(ov.creditCardLimit).toBe(500000);
+    expect(ov.creditCardUsed).toBe(60000);
+    expect(ov.creditCardAvailable).toBe(440000);
+    expect(ov.creditCardInvoice).toBe(20000);
   });
 });

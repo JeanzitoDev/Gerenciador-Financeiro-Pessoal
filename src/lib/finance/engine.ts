@@ -2,11 +2,13 @@ import type { Account, Contribution, Entry, FinanceData, Goal } from "../types";
 import { Decimal, checkedCents, sumCents } from "./money";
 import { daysBetween, inclusiveMonths } from "./dates";
 import { goalBlockers } from "./goal-dependencies";
+import { creditCardSummary } from "./credit-cards";
 export function balance(
   account: Account,
   entries: Entry[],
   asOf: string,
 ): number {
+  if (account.kind === "credit_card") return 0;
   if (account.opening_date > asOf) return 0;
   let total = new Decimal(account.opening_cents);
   for (const e of entries)
@@ -87,22 +89,28 @@ export function overview(data: FinanceData, month: string, asOf: string) {
   const posted = data.transactions.filter(
     (e) => e.status === "posted" && e.date.startsWith(month) && e.date <= asOf,
   );
-  const benefit = new Set(
-    data.accounts.filter((a) => a.kind === "benefit").map((a) => a.id),
+  const segregated = new Set(
+    data.accounts
+      .filter((a) => a.kind === "benefit" || a.kind === "credit_card")
+      .map((a) => a.id),
   );
   const income = sumCents(
     posted
-      .filter((e) => e.kind === "income" && !benefit.has(e.target_account_id!))
+      .filter(
+        (e) => e.kind === "income" && !segregated.has(e.target_account_id!),
+      )
       .map((e) => e.amount_cents),
   );
   const expense = sumCents(
     posted
-      .filter((e) => e.kind === "expense" && !benefit.has(e.source_account_id!))
+      .filter(
+        (e) => e.kind === "expense" && !segregated.has(e.source_account_id!),
+      )
       .map((e) => e.amount_cents),
   );
   const assets = sumCents(
     data.accounts
-      .filter((a) => a.kind !== "benefit")
+      .filter((a) => a.kind !== "benefit" && a.kind !== "credit_card")
       .map((a) => balance(a, data.transactions, asOf)),
   );
   const benefits = sumCents(
@@ -136,6 +144,20 @@ export function overview(data: FinanceData, month: string, asOf: string) {
   const overdraftAvailable = sumCents(
     checkingOverdrafts.map((o) => o.remainingCents),
   );
+  const creditCards = data.accounts
+    .filter((a) => a.kind === "credit_card")
+    .map((c) => creditCardSummary(c, data.transactions, month, asOf));
+  const creditCardLimit = sumCents(creditCards.map((c) => c.limitCents));
+  const creditCardUsed = sumCents(creditCards.map((c) => c.usedCents));
+  const creditCardAvailable = sumCents(
+    creditCards.map((c) => c.availableCents),
+  );
+  const creditCardInvoice = sumCents(
+    creditCards.map((c) => c.currentInvoice.totalCents),
+  );
+  const creditCardInvoiceOpen = sumCents(
+    creditCards.map((c) => c.currentInvoice.openCents),
+  );
   return {
     income,
     expense,
@@ -148,6 +170,11 @@ export function overview(data: FinanceData, month: string, asOf: string) {
     overdraftLimit,
     overdraftUsed,
     overdraftAvailable,
+    creditCardLimit,
+    creditCardUsed,
+    creditCardAvailable,
+    creditCardInvoice,
+    creditCardInvoiceOpen,
   };
 }
 export type PlanningStrategy = "date" | "term" | "budget";
@@ -306,8 +333,10 @@ export function expenseCategories(
   month: string,
   asOf: string,
 ) {
-  const benefits = new Set(
-    accounts.filter((a) => a.kind === "benefit").map((a) => a.id),
+  const segregated = new Set(
+    accounts
+      .filter((a) => a.kind === "benefit" || a.kind === "credit_card")
+      .map((a) => a.id),
   );
   const sums = new Map<string, number>();
   for (const e of entries)
@@ -316,7 +345,7 @@ export function expenseCategories(
       e.status === "posted" &&
       e.date.startsWith(month) &&
       e.date <= asOf &&
-      !benefits.has(e.source_account_id!)
+      !segregated.has(e.source_account_id!)
     )
       sums.set(
         e.category,

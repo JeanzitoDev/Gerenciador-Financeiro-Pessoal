@@ -48,7 +48,8 @@ export default function PiggyBankBoard({
   );
 
   const validAccounts = useMemo(
-    () => accounts.filter((a) => a.kind !== "benefit"),
+    () =>
+      accounts.filter((a) => a.kind !== "benefit" && a.kind !== "credit_card"),
     [accounts],
   );
   const [accountId, setAccountId] = useState(

@@ -5,6 +5,8 @@ import { balance, goalFunded, reserved } from "./finance/engine";
 import { recurrenceDates } from "./finance/recurrence";
 import { schemas, profileSchema } from "./validation";
 import { validateGoalGraph } from "./finance/goal-dependencies";
+import { formatCreditCardExternalId } from "./finance/credit-cards";
+import { formatPiggyBankNote } from "./finance/piggy-bank";
 export const DEMO_USER = "00000000-0000-4000-8000-000000000001";
 const uid = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -17,9 +19,14 @@ export function demoData(): FinanceData {
     cash = uid(11),
     inv = uid(12),
     va = uid(13),
+    cardItau = uid(14),
+    cardNubank = uid(15),
+    bankSecondary = uid(16),
     reserve = uid(20),
     trip = uid(21),
-    course = uid(22);
+    course = uid(22),
+    cofrinho = uid(23),
+    carLoan = uid(60);
   const owned = { user_id: DEMO_USER };
   const accounts: Account[] = [
     {
@@ -54,6 +61,39 @@ export function demoData(): FinanceData {
       kind: "benefit",
       opening_cents: 0,
       opening_date: previous,
+    },
+    {
+      ...owned,
+      id: bankSecondary,
+      name: "Conta secundária · Bradesco",
+      kind: "checking",
+      opening_cents: 30000,
+      opening_date: previous,
+      overdraft_cents: 100000,
+    },
+    {
+      ...owned,
+      id: cardItau,
+      name: "Itaú Click",
+      kind: "credit_card",
+      institution: "Itaú",
+      opening_cents: 0,
+      opening_date: previous,
+      credit_limit_cents: 600000,
+      closing_day: 13,
+      due_day: 20,
+    },
+    {
+      ...owned,
+      id: cardNubank,
+      name: "Nubank Ultravioleta",
+      kind: "credit_card",
+      institution: "Nubank",
+      opening_cents: 0,
+      opening_date: previous,
+      credit_limit_cents: 450000,
+      closing_day: 8,
+      due_day: 15,
     },
   ];
   const transactions: Entry[] = [];
@@ -153,9 +193,137 @@ export function demoData(): FinanceData {
     target_account_id: null,
     category: "Casa",
   });
+  add({
+    kind: "expense",
+    description: "Manutenção preventiva do carro",
+    amount_cents: 48500,
+    date: `${month}-${String(Math.min(11, day)).padStart(2, "0")}`,
+    status: "posted",
+    source_account_id: bankSecondary,
+    target_account_id: null,
+    category: "Transporte",
+  });
+  const notebookBuyDate = addMonths(`${month}-05`, -2);
+  for (let i = 1; i <= 10; i++) {
+    const dueMonth = addMonths(`${month}-01`, i - 3).slice(0, 7);
+    const dueDate = `${dueMonth}-20`;
+    const isPastPaid = i <= 2;
+    add({
+      kind: "expense",
+      description: `Notebook de trabalho (${i}/10)`,
+      amount_cents: 32000,
+      date: dueDate,
+      status: isPastPaid ? "posted" : "planned",
+      source_account_id: cardItau,
+      target_account_id: null,
+      category: "Eletrônicos",
+      external_id: formatCreditCardExternalId({
+        groupId: "demo-notebook",
+        installmentNumber: i,
+        totalInstallments: 10,
+        purchaseDate: notebookBuyDate,
+        dueDate,
+      }),
+    });
+  }
+  const shoesBuyDate = `${month}-${String(Math.min(6, day)).padStart(2, "0")}`;
+  for (let i = 1; i <= 3; i++) {
+    const dueMonth = addMonths(`${month}-01`, i - 1).slice(0, 7);
+    const dueDate = `${dueMonth}-20`;
+    add({
+      kind: "expense",
+      description: `Tênis de corrida (${i}/3)`,
+      amount_cents: 14990,
+      date: dueDate,
+      status: "planned",
+      source_account_id: cardItau,
+      target_account_id: null,
+      category: "Saúde",
+      external_id: formatCreditCardExternalId({
+        groupId: "demo-tenis",
+        installmentNumber: i,
+        totalInstallments: 3,
+        purchaseDate: shoesBuyDate,
+        dueDate,
+      }),
+    });
+  }
+  add({
+    kind: "expense",
+    description: "Assinaturas de streaming",
+    amount_cents: 6490,
+    date: `${month}-20`,
+    status: "planned",
+    source_account_id: cardItau,
+    target_account_id: null,
+    category: "Assinaturas",
+    external_id: formatCreditCardExternalId({
+      groupId: "demo-streaming",
+      installmentNumber: 1,
+      totalInstallments: 1,
+      purchaseDate: `${month}-${String(Math.min(4, day)).padStart(2, "0")}`,
+      dueDate: `${month}-20`,
+    }),
+  });
+  const monitorBuyDate = addMonths(`${month}-04`, -1);
+  for (let i = 1; i <= 6; i++) {
+    const dueMonth = addMonths(`${month}-01`, i - 2).slice(0, 7);
+    const dueDate = `${dueMonth}-15`;
+    const isPastPaid = i === 1;
+    add({
+      kind: "expense",
+      description: `Monitor 27 polegadas (${i}/6)`,
+      amount_cents: 18500,
+      date: dueDate,
+      status: isPastPaid ? "posted" : "planned",
+      source_account_id: cardNubank,
+      target_account_id: null,
+      category: "Trabalho",
+      external_id: formatCreditCardExternalId({
+        groupId: "demo-monitor",
+        installmentNumber: i,
+        totalInstallments: 6,
+        purchaseDate: monitorBuyDate,
+        dueDate,
+      }),
+    });
+  }
+  add({
+    kind: "expense",
+    description: "Farmácia e bem-estar",
+    amount_cents: 8950,
+    date: `${month}-15`,
+    status: "planned",
+    source_account_id: cardNubank,
+    target_account_id: null,
+    category: "Saúde",
+    external_id: formatCreditCardExternalId({
+      groupId: "demo-farmacia",
+      installmentNumber: 1,
+      totalInstallments: 1,
+      purchaseDate: `${month}-${String(Math.min(3, day)).padStart(2, "0")}`,
+      dueDate: `${month}-15`,
+    }),
+  });
   return {
     accounts,
-    loans: [],
+    loans: [
+      {
+        ...owned,
+        id: carLoan,
+        name: "Financiamento do veículo",
+        kind: "financing",
+        institution: "Banco Itaú",
+        principal_cents: 4200000,
+        installment_cents: 112000,
+        total_installments: 48,
+        paid_before: 12,
+        first_due_date: addMonths(`${month}-15`, -12),
+        monthly_rate: 0.0129,
+        cet_annual_rate: 0.172,
+        account_id: bank,
+      },
+    ],
     email: "visitante@demo.local",
     transactions,
     goals: [
@@ -186,6 +354,15 @@ export function demoData(): FinanceData {
         priority: 3,
         monthly_budget_cents: 30000,
       },
+      {
+        ...owned,
+        id: cofrinho,
+        name: "Cofrinho progressivo (1 a 200)",
+        target_cents: 2010000,
+        target_date: addMonths(now, 10),
+        priority: 4,
+        monthly_budget_cents: 35000,
+      },
     ],
     contributions: [
       {
@@ -214,6 +391,15 @@ export function demoData(): FinanceData {
         amount_cents: 50000,
         date: now,
         note: "",
+      },
+      {
+        ...owned,
+        id: uid(33),
+        goal_id: cofrinho,
+        account_id: bank,
+        amount_cents: 30000,
+        date: now,
+        note: formatPiggyBankNote([5, 10, 15, 20, 25, 50, 75, 100], 200),
       },
     ],
     investments: [
@@ -301,6 +487,7 @@ export function validateDemo(data: FinanceData): void {
     if (
       !a ||
       a.kind === "benefit" ||
+      a.kind === "credit_card" ||
       !data.goals.some((g) => g.id === c.goal_id) ||
       c.date > asOf ||
       c.date < a.opening_date
@@ -347,6 +534,85 @@ export function mutateDemo(
   payload: Record<string, unknown>,
 ): FinanceData {
   const next = structuredClone(data);
+  if (
+    entity === "transactions" &&
+    method === "DELETE" &&
+    typeof payload.group_prefix === "string" &&
+    /^cc:[a-zA-Z0-9_-]+:$/.test(payload.group_prefix)
+  ) {
+    const prefix = payload.group_prefix;
+    next.transactions = next.transactions.filter(
+      (e) => !e.external_id?.startsWith(prefix),
+    );
+    validateDemo(next);
+    return next;
+  }
+  if (
+    entity === "transactions" &&
+    method === "POST" &&
+    Array.isArray(payload.batch_entries)
+  ) {
+    if (payload.batch_entries.length < 1 || payload.batch_entries.length > 60)
+      throw new Error("Quantidade de parcelas inválida.");
+    for (const item of payload.batch_entries) {
+      const parsedItem = schemas.transactions.safeParse(item);
+      if (!parsedItem.success)
+        throw new Error(parsedItem.error.issues[0].message);
+      next.transactions.push({
+        created_at: new Date().toISOString(),
+        source: "manual",
+        external_id: null,
+        import_batch_id: null,
+        categorization_rule_id: null,
+        recurrence_id: null,
+        occurrence_date: null,
+        ...parsedItem.data,
+        id: crypto.randomUUID(),
+        user_id: DEMO_USER,
+      } as Entry);
+    }
+    validateDemo(next);
+    return next;
+  }
+  if (
+    entity === "transactions" &&
+    method === "PUT" &&
+    Array.isArray(payload.batch_pay_ids)
+  ) {
+    const idSet = new Set(payload.batch_pay_ids.map(String));
+    const now = today();
+    const payDate =
+      typeof payload.pay_date === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(payload.pay_date) &&
+      payload.pay_date <= now
+        ? payload.pay_date
+        : now;
+    for (const e of next.transactions) {
+      if (idSet.has(e.id)) {
+        e.status = "posted";
+        e.date = payDate;
+      }
+    }
+    if (payload.payment_entry && typeof payload.payment_entry === "object") {
+      const parsedPay = schemas.transactions.safeParse(payload.payment_entry);
+      if (!parsedPay.success)
+        throw new Error(parsedPay.error.issues[0].message);
+      next.transactions.push({
+        created_at: new Date().toISOString(),
+        source: "manual",
+        external_id: null,
+        import_batch_id: null,
+        categorization_rule_id: null,
+        recurrence_id: null,
+        occurrence_date: null,
+        ...parsedPay.data,
+        id: crypto.randomUUID(),
+        user_id: DEMO_USER,
+      } as Entry);
+    }
+    validateDemo(next);
+    return next;
+  }
   const id = typeof payload.id === "string" ? payload.id : crypto.randomUUID();
   if (entity === "loans" && !next.loans) next.loans = [];
   const rows = next[entity] as unknown as Record<string, unknown>[];

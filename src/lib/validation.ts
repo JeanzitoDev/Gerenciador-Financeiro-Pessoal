@@ -18,10 +18,14 @@ const nullableId = id.nullable();
 export const accountSchema = z
   .object({
     name: text(80),
-    kind: z.enum(["checking", "cash", "benefit", "investment"]),
+    kind: z.enum(["checking", "cash", "benefit", "investment", "credit_card"]),
     opening_cents: cents,
     opening_date: date,
     overdraft_cents: cents.nonnegative().optional(),
+    institution: z.string().trim().max(60).optional(),
+    credit_limit_cents: cents.nonnegative().optional(),
+    closing_day: z.number().int().min(1).max(31).optional(),
+    due_day: z.number().int().min(1).max(31).optional(),
   })
   .superRefine((v, ctx) => {
     if (v.kind !== "checking" && (v.overdraft_cents ?? 0) > 0)
@@ -40,6 +44,20 @@ export const accountSchema = z
           "O saldo inicial negativo não pode ultrapassar o limite do cheque especial.",
         path: ["opening_cents"],
       });
+    if (v.kind === "credit_card") {
+      if ((v.credit_limit_cents ?? 0) <= 0)
+        ctx.addIssue({
+          code: "custom",
+          message: "Informe um limite maior que zero para o cartão de crédito.",
+          path: ["credit_limit_cents"],
+        });
+      if (!v.due_day || v.due_day < 1 || v.due_day > 31)
+        ctx.addIssue({
+          code: "custom",
+          message: "Informe o dia de vencimento da fatura (1 a 31).",
+          path: ["due_day"],
+        });
+    }
   });
 export const goalSchema = z.object({
   name: text(80),
@@ -86,6 +104,7 @@ export const transactionSchema = z
     category: text(60),
     gross_cents: cents.nonnegative().nullable().default(null),
     deductions_cents: cents.nonnegative().nullable().default(null),
+    external_id: z.string().trim().max(120).nullable().optional(),
   })
   .superRefine((v, ctx) => {
     if (v.kind !== "yield" && v.amount_cents <= 0)

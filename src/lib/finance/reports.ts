@@ -87,8 +87,10 @@ function summarizeMonth(
   asOf: string,
   accountId: string,
 ) {
-  const benefitIds = new Set(
-    data.accounts.filter((a) => a.kind === "benefit").map((a) => a.id),
+  const segregatedIds = new Set(
+    data.accounts
+      .filter((a) => a.kind === "benefit" || a.kind === "credit_card")
+      .map((a) => a.id),
   );
   const posted = data.transactions.filter(
     (e) =>
@@ -104,13 +106,13 @@ function summarizeMonth(
     e.kind === "income" &&
     (accountId
       ? e.target_account_id === accountId
-      : !benefitIds.has(e.target_account_id ?? ""));
+      : !segregatedIds.has(e.target_account_id ?? ""));
 
   const isEligibleExpense = (e: Entry) =>
     e.kind === "expense" &&
     (accountId
       ? e.source_account_id === accountId
-      : !benefitIds.has(e.source_account_id ?? ""));
+      : !segregatedIds.has(e.source_account_id ?? ""));
 
   const incomeEntries = posted.filter(isEligibleIncome);
   const expenseEntries = posted.filter(isEligibleExpense);
@@ -237,7 +239,7 @@ export function buildMonthlyReport(
 
   const accountsToSummarize = accountId
     ? data.accounts.filter((a) => a.id === accountId)
-    : data.accounts;
+    : data.accounts.filter((a) => a.kind !== "credit_card");
 
   const accountSummaries: AccountMonthlyRow[] = accountsToSummarize.map(
     (account) => {

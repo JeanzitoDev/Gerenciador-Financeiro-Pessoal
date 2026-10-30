@@ -1,4 +1,5 @@
 import { requireUser, json, errorResponse, databaseError } from "@/lib/api";
+import { normalizeAccountRow } from "@/lib/finance/credit-cards";
 export const dynamic = "force-dynamic";
 export async function GET() {
   try {
@@ -26,7 +27,10 @@ export async function GET() {
           all.push(...data);
           if (data.length < 500) break;
         }
-        return [table, all];
+        return [
+          table,
+          table === "accounts" ? all.map((r) => normalizeAccountRow(r)) : all,
+        ];
       }),
     );
     const { data: profile, error } = await supabase

@@ -703,8 +703,8 @@ legend {
 }
 .summary-grid {
   display: grid;
-  grid-template-columns: 1.08fr 1fr;
-  gap: 20px;
+  grid-template-columns: 1.05fr 1.05fr 1.12fr;
+  gap: 18px;
 }
 .balance-hero {
   background: linear-gradient(105deg, #51428e 0%, #6955b7 60%, #7f6ac8 100%);
@@ -714,6 +714,23 @@ legend {
   position: relative;
   overflow: hidden;
   min-height: 223px;
+  display: flex;
+  flex-direction: column;
+}
+.balance-hero.credit-card-hero {
+  background: linear-gradient(105deg, #2d3561 0%, #3d487c 60%, #525f99 100%);
+}
+.balance-hero.credit-card-hero .hero-label {
+  color: #e6ecff;
+}
+.balance-hero.credit-card-hero > p {
+  color: #d2dbf7;
+}
+.balance-hero.credit-card-hero .hero-footer > span {
+  color: #e4ebff;
+}
+.balance-hero.credit-card-hero .hero-footer i {
+  background: #a9bbf8;
 }
 .hero-top {
   display: flex;
@@ -763,7 +780,7 @@ legend {
   align-items: center;
   gap: 10px;
   border-top: 1px solid #fff2;
-  margin-top: 22px;
+  margin-top: auto;
   padding: 13px 0;
   position: relative;
   z-index: 1;
@@ -2197,8 +2214,11 @@ legend {
     padding: 10px 12px;
   }
   .summary-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 18px;
+  }
+  .summary-grid > .mini-stat-grid {
+    grid-column: 1 / -1;
   }
   .balance-hero {
     min-height: 205px;
@@ -2207,7 +2227,7 @@ legend {
     margin-top: 16px;
   }
   .hero-footer {
-    margin-top: 18px;
+    margin-top: auto;
   }
   .mini-stat-grid {
     gap: 18px;
@@ -3273,4 +3293,210 @@ legend {
     width: 16px;
     height: 16px;
   }
+}
+.cc-bank-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.cc-bank-chip {
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+  color: var(--muted);
+  border-radius: 99px;
+  padding: 5px 11px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.cc-bank-chip.selected,
+.cc-bank-chip:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.cc-schedule-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cc-schedule-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cc-schedule-title {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.cc-schedule-title strong {
+  display: block;
+  font-size: 13px;
+  color: var(--text);
+}
+.cc-schedule-title small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+@media (max-width: 1380px) and (min-width: 901px) {
+  .summary-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  .summary-grid > .mini-stat-grid {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 900px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+  .summary-grid > .mini-stat-grid {
+    grid-column: auto;
+  }
+}
+.cc-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+.cc-preview-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cc-preview-grid small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.cc-preview-grid strong {
+  font-size: 12px;
+  color: var(--text);
+}
+.cc-installment-pills,
+.cc-upcoming-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cc-installment-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 10px;
+  color: var(--muted);
+}
+button.cc-installment-pill {
+  cursor: pointer;
+}
+button.cc-installment-pill:hover,
+button.cc-installment-pill.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.cc-installment-pill strong {
+  font-size: 11px;
+  color: var(--text);
+}
+.cc-invoice-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 4px;
+}
+.cc-invoice-header small {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.cc-invoice-header .account-balance {
+  margin: 0;
+}
+.cc-invoice-list {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cc-invoice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+}
+.cc-invoice-desc {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cc-invoice-desc strong {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cc-invoice-desc small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.cc-invoice-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.cc-invoice-right strong {
+  font-size: 12px;
+}
+.cc-upcoming-box {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cc-pay-box {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cc-pay-box > strong {
+  font-size: 12px;
+}
+.cc-card-actions {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cc-card-actions > .button {
+  flex: 1;
+  min-width: 150px;
 }

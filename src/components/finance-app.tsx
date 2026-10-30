@@ -39,6 +39,7 @@ import {
   Compass,
   FileChartColumn,
   ShieldCheck,
+  CreditCard,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type {
@@ -93,6 +94,10 @@ import SelectControl from "./select-control";
 import PiggyBankBoard from "./piggy-bank-board";
 import { entryStatusLabel, isPaidEarly } from "@/lib/finance/entry-status";
 import { buildMonthlyReport } from "@/lib/finance/reports";
+import {
+  creditCardSummary,
+  parseCreditCardMeta,
+} from "@/lib/finance/credit-cards";
 type Screen =
   | "overview"
   | "transactions"
@@ -149,17 +154,19 @@ const descriptions: Record<Screen, string> = {
   reports: "Transforme seus movimentos em clareza.",
   settings: "Deixe seu espaço com a sua cara.",
 };
-const accountNames = {
+const accountNames: Record<Account["kind"], string> = {
   checking: "Conta corrente",
   cash: "Dinheiro",
   benefit: "Benefício",
   investment: "Dinheiro guardado",
+  credit_card: "Cartão de crédito",
 };
 const accountIcons: Record<Account["kind"], LucideIcon> = {
   checking: Landmark,
   cash: Banknote,
   benefit: Gift,
   investment: TrendingUp,
+  credit_card: CreditCard,
 };
 const entryNames = {
   income: "Receita",
@@ -241,6 +248,12 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
       entity: Entity;
       id: string;
       label: string;
+      groupPrefix?: string;
+    } | null>(null),
+    [payingCard, setPayingCard] = useState<{
+      cardId: string;
+      payAccountId: string;
+      busy: boolean;
     } | null>(null);
   const [loading, setLoading] = useState(!demo),
     [error, setError] = useState(""),
@@ -469,19 +482,26 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
   }
   async function deleteRecord() {
     if (!remove) return;
+    const payload = remove.groupPrefix
+      ? { id: remove.id, group_prefix: remove.groupPrefix }
+      : { id: remove.id };
     if (demo)
-      setData(mutateDemo(data!, remove.entity, "DELETE", { id: remove.id }));
+      setData(mutateDemo(data!, remove.entity, "DELETE", payload));
     else {
       await request(`/api/records/${remove.entity}`, {
         method: "DELETE",
-        body: JSON.stringify({ id: remove.id }),
+        body: JSON.stringify(payload),
       });
       await load();
     }
     setToast("Registro excluído.");
   }
-  const askDelete = (entity: Entity, row: { id: string }, label: string) =>
-    setRemove({ entity, id: row.id, label });
+  const askDelete = (
+    entity: Entity,
+    row: { id: string },
+    label: string,
+    groupPrefix?: string,
+  ) => setRemove({ entity, id: row.id, label, groupPrefix });
   const visibleEntries = useMemo(
     () =>
       data?.transactions
@@ -597,7 +617,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
     }
   })();
   const availableAccounts = data.accounts
-    .filter((a) => a.kind !== "benefit")
+    .filter((a) => a.kind !== "benefit" && a.kind !== "credit_card")
     .map((a) => ({
       account: a,
       available: Math.max(
@@ -729,6 +749,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
       setToast(e instanceof Error ? e.message : "Não foi possível sair.");
     }
   }
+  const creditCards = data.accounts.filter((a) => a.kind === "credit_card");
   const pending = data.transactions
     .filter((e) => e.recurrence_id && e.status === "planned" && e.date <= asOf)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -1121,9 +1142,9 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
               <p>{descriptions[screen]}</p>
             </div>
             <div className="page-heading-actions">
-              {["overview", "transactions", "reports"].includes(screen) && (
-                <MonthControl value={month} onChange={setMonth} />
-              )}
+              {["overview", "transactions", "reports", "accounts"].includes(
+                screen,
+              ) && <MonthControl value={month} onChange={setMonth} />}
               {screen === "overview" && (
                 <button
                   className="button primary"
@@ -1189,6 +1210,68 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   <div className="hero-orbit one" />
                   <div className="hero-orbit two" />
                 </section>
+                <section className="balance-hero credit-card-hero">
+                  <div className="hero-top">
+                    <span className="hero-label">
+                      <CreditCard size={18} /> Gastos com cartão de crédito
+                    </span>
+                    <span className="hero-chip">
+                      {creditCards.length === 0
+                        ? "Sem cartão"
+                        : stats.creditCardInvoice === 0
+                          ? "Sem fatura"
+                          : stats.creditCardInvoiceOpen === 0
+                            ? "Fatura paga"
+                            : `Fatura · ${monthLabel(month).split(" ")[0]}`}
+                    </span>
+                  </div>
+                  <strong className="hero-value">
+                    {value(stats.creditCardInvoice)}
+                  </strong>
+                  <p>
+                    {creditCards.length === 0
+                      ? "Cadastre seu cartão em Contas para acompanhar faturas e parcelas."
+                      : stats.creditCardInvoice > 0 &&
+                          stats.creditCardInvoiceOpen < stats.creditCardInvoice
+                        ? `Restam ${value(stats.creditCardInvoiceOpen)} em aberto na fatura de ${monthLabel(month)}.`
+                        : "Fatura do mês segregada do saldo das suas contas."}
+                  </p>
+                  <div className="hero-footer">
+                    {creditCards.length > 0 ? (
+                      <span>
+                        <i /> Limite livre{" "}
+                        <strong>{value(stats.creditCardAvailable)}</strong>
+                        {stats.creditCardUsed > 0 && (
+                          <>
+                            {" · "}Comprometido{" "}
+                            <strong>{value(stats.creditCardUsed)}</strong>
+                          </>
+                        )}
+                      </span>
+                    ) : (
+                      <span>
+                        <i /> Compras à vista e parceladas sem misturar com a
+                        conta
+                      </span>
+                    )}
+                    <button
+                      onClick={() =>
+                        creditCards.length > 0
+                          ? go("accounts")
+                          : newRecord("accounts", { kind: "credit_card" })
+                      }
+                      aria-label={
+                        creditCards.length > 0
+                          ? "Ver cartões de crédito"
+                          : "Adicionar cartão de crédito"
+                      }
+                    >
+                      <ArrowUpRight size={20} />
+                    </button>
+                  </div>
+                  <div className="hero-orbit one" />
+                  <div className="hero-orbit two" />
+                </section>
                 <div className="mini-stat-grid">
                   <section className="stat-card">
                     <span className="entry-icon income">
@@ -1241,6 +1324,17 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                         <strong>{value(stats.overdraftAvailable)}</strong>
                       </>
                     )}
+                  </span>
+                )}
+                {stats.creditCardLimit > 0 && (
+                  <span>
+                    Fatura cartões ({monthLabel(month).split(" ")[0]}){" "}
+                    <strong
+                      className={stats.creditCardInvoice > 0 ? "negative" : ""}
+                    >
+                      {value(stats.creditCardInvoice)}
+                    </strong>{" "}
+                    (limite livre {value(stats.creditCardAvailable)})
                   </span>
                 )}
               </div>
@@ -1453,135 +1547,550 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
               <div className="toolbar">
                 <p className="muted">
                   Saldo atualizado com os movimentos confirmados até{" "}
-                  {formatDate(asOf)}.
+                  {formatDate(asOf)}. Cartões de crédito ficam segregados do
+                  saldo das contas.
                 </p>
-                <button
-                  className="button primary"
-                  onClick={() => newRecord("accounts")}
-                >
-                  <Plus size={17} />
-                  Nova conta
-                </button>
-              </div>
-              {data.accounts.length ? (
-                <div className="accounts-grid">
-                  {data.accounts.map((a) => {
-                    const Icon = accountIcons[a.kind],
-                      b = balance(a, data.transactions, asOf),
-                      r = reserved(a.id, data.contributions),
-                      od = accountOverdraft(a, b, r);
-                    return (
-                      <article className="panel account-card" key={a.id}>
-                        <div className="section-head">
-                          <span
-                            className={`square-icon ${a.kind === "benefit" ? "amber" : ""}`}
-                          >
-                            <Icon size={22} />
-                          </span>
-                          <Actions
-                            label={a.name}
-                            onEdit={() => edit("accounts", a)}
-                            onDelete={() => askDelete("accounts", a, a.name)}
-                          />
-                        </div>
-                        <p className="eyebrow">{accountNames[a.kind]}</p>
-                        <h2>{a.name}</h2>
-                        <strong
-                          className={`account-balance ${b < 0 ? "negative" : ""}`}
-                        >
-                          {value(b)}
-                        </strong>
-                        <div className="account-details">
-                          <span>
-                            Reservado para metas<strong>{value(r)}</strong>
-                          </span>
-                          <span>
-                            {a.kind === "benefit"
-                              ? "Uso restrito · VA/VR"
-                              : "Livre de reservas"}
-                            <strong className={b - r < 0 ? "negative" : ""}>
-                              {value(b - r)}
-                            </strong>
-                          </span>
-                        </div>
-                        {od.hasOverdraft && (
-                          <div
-                            className={`overdraft-box ${od.usedCents > 0 ? "active" : ""}`}
-                          >
-                            <div className="overdraft-head">
-                              <span>
-                                {od.usedCents > 0
-                                  ? "Em uso do cheque especial"
-                                  : "Cheque especial contratado"}
-                              </span>
-                              <strong>
-                                {od.usedCents > 0
-                                  ? `${Math.round(od.usageRatio * 100)}% usado`
-                                  : "100% livre"}
-                              </strong>
-                            </div>
-                            <div
-                              className="overdraft-track"
-                              aria-label="Consumo do cheque especial"
-                            >
-                              <span
-                                style={{ width: `${od.usageRatio * 100}%` }}
-                              />
-                            </div>
-                            <div className="overdraft-metrics">
-                              <span>
-                                Limite do cheque especial
-                                <strong>{value(od.limitCents)}</strong>
-                              </span>
-                              <span>
-                                Comprometido do limite
-                                <strong
-                                  className={od.usedCents > 0 ? "negative" : ""}
-                                >
-                                  {value(od.usedCents)}
-                                </strong>
-                              </span>
-                              <span>
-                                Limite disponível
-                                <strong>{value(od.remainingCents)}</strong>
-                              </span>
-                            </div>
-                            {od.usedCents > 0 && (
-                              <small className="overdraft-note">
-                                Novas entradas compensam o limite até a conta
-                                chegar no zero novamente.
-                              </small>
-                            )}
-                          </div>
-                        )}
-                        <button
-                          className="text-button"
-                          onClick={() =>
-                            newRecord(
-                              "transactions",
-                              a.kind === "investment"
-                                ? { kind: "transfer", target_account_id: a.id }
-                                : { kind: "expense", source_account_id: a.id },
-                            )
-                          }
-                        >
-                          Registrar movimento
-                          <ArrowRight size={16} />
-                        </button>
-                      </article>
-                    );
-                  })}
+                <div className="button-row">
+                  <button
+                    className="button secondary"
+                    onClick={() =>
+                      newRecord("accounts", { kind: "credit_card" })
+                    }
+                  >
+                    <CreditCard size={17} />
+                    Novo cartão de crédito
+                  </button>
+                  <button
+                    className="button primary"
+                    onClick={() => newRecord("accounts")}
+                  >
+                    <Plus size={17} />
+                    Nova conta
+                  </button>
                 </div>
-              ) : (
-                <section className="panel">
-                  <Empty
-                    title="Seu dinheiro começa aqui"
-                    text="Cadastre uma conta com o saldo que você tem hoje."
-                    action={() => newRecord("accounts")}
-                    label="Criar conta"
-                  />
-                </section>
-              )}
+              </div>
+              {(() => {
+                const regularAccounts = data.accounts.filter(
+                  (a) => a.kind !== "credit_card",
+                );
+                const liquidAccounts = regularAccounts.filter((a) =>
+                  ["checking", "cash"].includes(a.kind),
+                );
+                return (
+                  <>
+                    {regularAccounts.length ? (
+                      <div className="accounts-grid">
+                        {regularAccounts.map((a) => {
+                          const Icon = accountIcons[a.kind],
+                            b = balance(a, data.transactions, asOf),
+                            r = reserved(a.id, data.contributions),
+                            od = accountOverdraft(a, b, r);
+                          return (
+                            <article className="panel account-card" key={a.id}>
+                              <div className="section-head">
+                                <span
+                                  className={`square-icon ${a.kind === "benefit" ? "amber" : ""}`}
+                                >
+                                  <Icon size={22} />
+                                </span>
+                                <Actions
+                                  label={a.name}
+                                  onEdit={() => edit("accounts", a)}
+                                  onDelete={() =>
+                                    askDelete("accounts", a, a.name)
+                                  }
+                                />
+                              </div>
+                              <p className="eyebrow">{accountNames[a.kind]}</p>
+                              <h2>{a.name}</h2>
+                              <strong
+                                className={`account-balance ${b < 0 ? "negative" : ""}`}
+                              >
+                                {value(b)}
+                              </strong>
+                              <div className="account-details">
+                                <span>
+                                  Reservado para metas<strong>{value(r)}</strong>
+                                </span>
+                                <span>
+                                  {a.kind === "benefit"
+                                    ? "Uso restrito · VA/VR"
+                                    : "Livre de reservas"}
+                                  <strong
+                                    className={b - r < 0 ? "negative" : ""}
+                                  >
+                                    {value(b - r)}
+                                  </strong>
+                                </span>
+                              </div>
+                              {od.hasOverdraft && (
+                                <div
+                                  className={`overdraft-box ${od.usedCents > 0 ? "active" : ""}`}
+                                >
+                                  <div className="overdraft-head">
+                                    <span>
+                                      {od.usedCents > 0
+                                        ? "Em uso do cheque especial"
+                                        : "Cheque especial contratado"}
+                                    </span>
+                                    <strong>
+                                      {od.usedCents > 0
+                                        ? `${Math.round(od.usageRatio * 100)}% usado`
+                                        : "100% livre"}
+                                    </strong>
+                                  </div>
+                                  <div
+                                    className="overdraft-track"
+                                    aria-label="Consumo do cheque especial"
+                                  >
+                                    <span
+                                      style={{
+                                        width: `${od.usageRatio * 100}%`,
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="overdraft-metrics">
+                                    <span>
+                                      Limite do cheque especial
+                                      <strong>{value(od.limitCents)}</strong>
+                                    </span>
+                                    <span>
+                                      Comprometido do limite
+                                      <strong
+                                        className={
+                                          od.usedCents > 0 ? "negative" : ""
+                                        }
+                                      >
+                                        {value(od.usedCents)}
+                                      </strong>
+                                    </span>
+                                    <span>
+                                      Limite disponível
+                                      <strong>
+                                        {value(od.remainingCents)}
+                                      </strong>
+                                    </span>
+                                  </div>
+                                  {od.usedCents > 0 && (
+                                    <small className="overdraft-note">
+                                      Novas entradas compensam o limite até a
+                                      conta chegar no zero novamente.
+                                    </small>
+                                  )}
+                                </div>
+                              )}
+                              <button
+                                className="text-button"
+                                onClick={() =>
+                                  newRecord(
+                                    "transactions",
+                                    a.kind === "investment"
+                                      ? {
+                                          kind: "transfer",
+                                          target_account_id: a.id,
+                                        }
+                                      : {
+                                          kind: "expense",
+                                          source_account_id: a.id,
+                                        },
+                                  )
+                                }
+                              >
+                                Registrar movimento
+                                <ArrowRight size={16} />
+                              </button>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <section className="panel">
+                        <Empty
+                          title="Seu dinheiro começa aqui"
+                          text="Cadastre uma conta com o saldo que você tem hoje."
+                          action={() => newRecord("accounts")}
+                          label="Criar conta"
+                        />
+                      </section>
+                    )}
+
+                    <div className="section-head standalone">
+                      <div>
+                        <h2>
+                          Cartões de crédito
+                          <span className="count-badge">
+                            {creditCards.length}
+                          </span>
+                        </h2>
+                        <p>
+                          Valores e parcelas segregados do saldo das contas ·
+                          Fatura de {monthLabel(month)}.
+                        </p>
+                      </div>
+                      <button
+                        className="button secondary"
+                        onClick={() =>
+                          newRecord("accounts", { kind: "credit_card" })
+                        }
+                      >
+                        <Plus size={16} />
+                        Adicionar cartão
+                      </button>
+                    </div>
+
+                    {creditCards.length ? (
+                      <div className="accounts-grid">
+                        {creditCards.map((card) => {
+                          const cc = creditCardSummary(
+                            card,
+                            data.transactions,
+                            month,
+                            asOf,
+                          );
+                          const inv = cc.currentInvoice;
+                          const isPaying = payingCard?.cardId === card.id;
+                          return (
+                            <article
+                              className="panel account-card credit-card-panel"
+                              key={card.id}
+                            >
+                              <div className="section-head">
+                                <span className="square-icon">
+                                  <CreditCard size={22} />
+                                </span>
+                                <Actions
+                                  label={card.name}
+                                  onEdit={() => edit("accounts", card)}
+                                  onDelete={() =>
+                                    askDelete("accounts", card, card.name)
+                                  }
+                                />
+                              </div>
+                              <p className="eyebrow">
+                                Cartão de crédito
+                                {card.institution
+                                  ? ` · ${card.institution}`
+                                  : ""}{" "}
+                                · Fecha dia {cc.closingDay} · Vence dia{" "}
+                                {cc.dueDay}
+                              </p>
+                              <h2>{card.name}</h2>
+                              <div className="cc-invoice-header">
+                                <div>
+                                  <small className="muted">
+                                    Fatura de {monthLabel(month)} (vence em{" "}
+                                    {formatDate(inv.dueDate)})
+                                  </small>
+                                  <strong
+                                    className={`account-balance ${inv.openCents > 0 ? "negative" : ""}`}
+                                  >
+                                    {value(inv.totalCents)}
+                                  </strong>
+                                </div>
+                                <span
+                                  className={`badge ${
+                                    inv.totalCents === 0
+                                      ? ""
+                                      : inv.openCents === 0
+                                        ? "success"
+                                        : "warning"
+                                  }`}
+                                >
+                                  {inv.totalCents === 0
+                                    ? "Sem gastos"
+                                    : inv.openCents === 0
+                                      ? "Fatura paga"
+                                      : inv.paidCents > 0
+                                        ? `Restam ${value(inv.openCents)}`
+                                        : "Aberta"}
+                                </span>
+                              </div>
+
+                              <div
+                                className={`overdraft-box ${cc.usedCents > 0 ? "active" : ""}`}
+                              >
+                                <div className="overdraft-head">
+                                  <span>Limite comprometido em parcelas</span>
+                                  <strong>
+                                    {cc.limitCents > 0
+                                      ? `${Math.round(cc.usageRatio * 100)}% em uso`
+                                      : "Sem limite definido"}
+                                  </strong>
+                                </div>
+                                <div
+                                  className="overdraft-track"
+                                  aria-label={`Uso do limite de ${card.name}`}
+                                >
+                                  <span
+                                    style={{ width: `${cc.usageRatio * 100}%` }}
+                                  />
+                                </div>
+                                <div className="overdraft-metrics">
+                                  <span>
+                                    Limite total
+                                    <strong>{value(cc.limitCents)}</strong>
+                                  </span>
+                                  <span>
+                                    Comprometido
+                                    <strong
+                                      className={
+                                        cc.usedCents > 0 ? "negative" : ""
+                                      }
+                                    >
+                                      {value(cc.usedCents)}
+                                    </strong>
+                                  </span>
+                                  <span>
+                                    Limite disponível
+                                    <strong>{value(cc.availableCents)}</strong>
+                                  </span>
+                                </div>
+                              </div>
+
+                              {inv.entries.length > 0 && (
+                                <div className="cc-invoice-list">
+                                  <small className="muted">
+                                    Lançamentos na fatura de {monthLabel(month)}{" "}
+                                    ({inv.entries.length}):
+                                  </small>
+                                  {inv.entries.map((item) => {
+                                    const meta = parseCreditCardMeta(
+                                      item.external_id,
+                                    );
+                                    const groupPrefix = meta
+                                      ? `cc:${meta.groupId}:`
+                                      : undefined;
+                                    return (
+                                      <div
+                                        className="cc-invoice-row"
+                                        key={item.id}
+                                      >
+                                        <div className="cc-invoice-desc">
+                                          <strong>{item.description}</strong>
+                                          <small>
+                                            {item.category}
+                                            {meta?.purchaseDate
+                                              ? ` · Compra em ${formatDate(meta.purchaseDate)}`
+                                              : ""}
+                                            {meta && meta.totalInstallments > 1
+                                              ? ` · Parcela ${meta.installmentNumber}/${meta.totalInstallments}`
+                                              : " · À vista (1x)"}
+                                          </small>
+                                        </div>
+                                        <div className="cc-invoice-right">
+                                          <strong>
+                                            {value(item.amount_cents)}
+                                          </strong>
+                                          <button
+                                            type="button"
+                                            className="icon-button"
+                                            aria-label={`Excluir ${item.description}`}
+                                            onClick={() =>
+                                              askDelete(
+                                                "transactions",
+                                                item,
+                                                meta &&
+                                                  meta.totalInstallments > 1
+                                                  ? `${item.description} (todas as parcelas desta compra)`
+                                                  : item.description,
+                                                groupPrefix,
+                                              )
+                                            }
+                                          >
+                                            <Trash2 size={14} />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {cc.upcomingInvoices.some(
+                                (m) => m.openCents > 0,
+                              ) && (
+                                <div className="cc-upcoming-box">
+                                  <small className="muted">
+                                    Próximas faturas (toque para ver o mês):
+                                  </small>
+                                  <div className="cc-upcoming-pills">
+                                    {cc.upcomingInvoices
+                                      .filter((m) => m.openCents > 0)
+                                      .map((m) => (
+                                        <button
+                                          key={m.month}
+                                          type="button"
+                                          className={`cc-installment-pill ${m.month === month ? "active" : ""}`}
+                                          onClick={() => setMonth(m.month)}
+                                        >
+                                          <span>
+                                            {
+                                              monthLabel(m.month)
+                                                .split(" ")[0]
+                                                .slice(0, 3)
+                                            }
+                                            /{m.month.slice(2, 4)}
+                                          </span>
+                                          <strong>{value(m.openCents)}</strong>
+                                        </button>
+                                      ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {isPaying && inv.openCents > 0 && (
+                                <div className="cc-pay-box">
+                                  <strong>
+                                    Pagar fatura de {monthLabel(month)} (
+                                    {value(inv.openCents)})
+                                  </strong>
+                                  <div className="form-field">
+                                    <span>
+                                      Descontar o pagamento de uma conta?
+                                    </span>
+                                    <SelectControl
+                                      label="Conta para pagamento da fatura"
+                                      allowEmpty={false}
+                                      value={payingCard.payAccountId}
+                                      onChange={(v) =>
+                                        setPayingCard({
+                                          ...payingCard,
+                                          payAccountId: v,
+                                        })
+                                      }
+                                      options={[
+                                        [
+                                          "",
+                                          "Apenas liberar o limite do cartão (sem debitar conta)",
+                                        ],
+                                        ...liquidAccounts.map(
+                                          (a): [string, string] => [
+                                            a.id,
+                                            `Debitar de ${a.name}`,
+                                          ],
+                                        ),
+                                      ]}
+                                    />
+                                  </div>
+                                  <div className="button-row">
+                                    <button
+                                      type="button"
+                                      className="button ghost"
+                                      onClick={() => setPayingCard(null)}
+                                    >
+                                      Cancelar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="button primary"
+                                      disabled={payingCard.busy}
+                                      onClick={async () => {
+                                        setPayingCard({
+                                          ...payingCard,
+                                          busy: true,
+                                        });
+                                        try {
+                                          const openIds = inv.entries
+                                            .filter(
+                                              (e) => e.status === "planned",
+                                            )
+                                            .map((e) => e.id);
+                                          await save("transactions", "PUT", {
+                                            batch_pay_ids: openIds,
+                                            payment_entry:
+                                              payingCard.payAccountId
+                                                ? {
+                                                    kind: "expense",
+                                                    description: `Pagamento fatura ${card.name} (${monthLabel(month)})`,
+                                                    amount_cents: inv.openCents,
+                                                    date: today(),
+                                                    category:
+                                                      "Fatura de cartão",
+                                                    status: "posted",
+                                                    source_account_id:
+                                                      payingCard.payAccountId,
+                                                    target_account_id: null,
+                                                    recurrence_id: null,
+                                                    occurrence_date: null,
+                                                  }
+                                                : undefined,
+                                          });
+                                          setPayingCard(null);
+                                          setToast(
+                                            "Fatura marcada como paga e limite do cartão liberado!",
+                                          );
+                                        } catch (err) {
+                                          setPayingCard({
+                                            ...payingCard,
+                                            busy: false,
+                                          });
+                                          setToast(
+                                            err instanceof Error
+                                              ? err.message
+                                              : "Não foi possível pagar a fatura.",
+                                          );
+                                        }
+                                      }}
+                                    >
+                                      <Check size={16} />
+                                      Confirmar pagamento
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="cc-card-actions">
+                                <button
+                                  type="button"
+                                  className="button secondary"
+                                  onClick={() =>
+                                    newRecord("transactions", {
+                                      kind: "expense",
+                                      source_account_id: card.id,
+                                    })
+                                  }
+                                >
+                                  <Plus size={16} />
+                                  Registrar compra no cartão
+                                </button>
+                                {inv.openCents > 0 && !isPaying && (
+                                  <button
+                                    type="button"
+                                    className="button primary"
+                                    onClick={() =>
+                                      setPayingCard({
+                                        cardId: card.id,
+                                        payAccountId:
+                                          liquidAccounts[0]?.id ?? "",
+                                        busy: false,
+                                      })
+                                    }
+                                  >
+                                    <Check size={16} />
+                                    Pagar fatura
+                                  </button>
+                                )}
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <section className="panel">
+                        <Empty
+                          icon={CreditCard}
+                          title="Nenhum cartão de crédito cadastrado"
+                          text="Adicione seu cartão com banco, fechamento, vencimento e limite para acompanhar compras à vista e parceladas sem misturar com o saldo das contas."
+                          action={() =>
+                            newRecord("accounts", { kind: "credit_card" })
+                          }
+                          label="Adicionar cartão de crédito"
+                        />
+                      </section>
+                    )}
+                  </>
+                );
+              })()}
             </>
           )}
           {screen === "goals" && (
@@ -2101,9 +2610,9 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     onChange={setReportAccount}
                     options={[
                       ["", "Todas as contas (sem benefícios)"],
-                      ...data.accounts.map(
-                        (a): [string, string] => [a.id, a.name],
-                      ),
+                      ...data.accounts
+                        .filter((a) => a.kind !== "credit_card")
+                        .map((a): [string, string] => [a.id, a.name]),
                     ]}
                   />
                 </div>

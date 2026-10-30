@@ -1,4 +1,9 @@
-export type AccountKind = "checking" | "cash" | "benefit" | "investment";
+export type AccountKind =
+  | "checking"
+  | "cash"
+  | "benefit"
+  | "investment"
+  | "credit_card";
 export type EntryKind = "income" | "expense" | "transfer" | "yield";
 export type EntryStatus = "planned" | "posted" | "cancelled";
 export interface Owned {
@@ -12,6 +17,10 @@ export interface Account extends Owned {
   opening_cents: number;
   opening_date: string;
   overdraft_cents?: number;
+  institution?: string;
+  credit_limit_cents?: number;
+  closing_day?: number;
+  due_day?: number;
 }
 export interface Entry extends Owned {
   kind: EntryKind;
