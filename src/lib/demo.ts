@@ -399,7 +399,7 @@ export function demoData(): FinanceData {
         account_id: bank,
         amount_cents: 30000,
         date: now,
-        note: formatPiggyBankNote([5, 10, 15, 20, 25, 50, 75, 100], 200),
+        note: formatPiggyBankNote([5, 10, 15, 20, 25, 50, 75, 100]),
       },
     ],
     investments: [
