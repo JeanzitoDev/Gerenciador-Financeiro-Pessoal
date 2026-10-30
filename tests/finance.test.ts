@@ -194,8 +194,8 @@ describe("saldos e relatórios", () => {
     };
     expect(overview(data, "2026-10", "2026-10-30")).toMatchObject({
       expense: 18056,
-      free: 1853,
-      liquid: 1853,
+      free: -8147,
+      liquid: -8147,
       overdraftLimit: 10000,
       overdraftUsed: 8147,
       overdraftAvailable: 1853,

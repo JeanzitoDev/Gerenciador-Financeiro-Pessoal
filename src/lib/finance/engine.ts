@@ -100,14 +100,10 @@ export function overview(data: FinanceData, month: string, asOf: string) {
       .filter((e) => e.kind === "expense" && !benefit.has(e.source_account_id!))
       .map((e) => e.amount_cents),
   );
-  const effectiveBalance = (a: Account) => {
-    const b = balance(a, data.transactions, asOf);
-    return accountOverdraft(a, b).effectiveBalanceCents;
-  };
   const assets = sumCents(
     data.accounts
       .filter((a) => a.kind !== "benefit")
-      .map(effectiveBalance),
+      .map((a) => balance(a, data.transactions, asOf)),
   );
   const benefits = sumCents(
     data.accounts
@@ -120,7 +116,7 @@ export function overview(data: FinanceData, month: string, asOf: string) {
       .filter((a) => a.kind === "checking" || a.kind === "cash")
       .map(
         (a) =>
-          effectiveBalance(a) -
+          balance(a, data.transactions, asOf) -
           reserved(a.id, data.contributions),
       ),
   );
