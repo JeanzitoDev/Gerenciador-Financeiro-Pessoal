@@ -1530,23 +1530,28 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                             </div>
                             <div className="overdraft-metrics">
                               <span>
-                                Usado do limite
+                                Limite do cheque especial
+                                <strong>{value(od.limitCents)}</strong>
+                              </span>
+                              <span>
+                                Comprometido do limite
                                 <strong
                                   className={od.usedCents > 0 ? "negative" : ""}
                                 >
-                                  {value(od.usedCents)} de{" "}
-                                  {value(od.limitCents)}
+                                  {value(od.usedCents)}
                                 </strong>
                               </span>
                               <span>
                                 Limite disponível
                                 <strong>{value(od.remainingCents)}</strong>
                               </span>
-                              <span>
-                                Fôlego total (saldo + limite)
-                                <strong>{value(od.totalAvailableCents)}</strong>
-                              </span>
                             </div>
+                            {od.usedCents > 0 && (
+                              <small className="overdraft-note">
+                                Novas entradas compensam o limite até a conta
+                                chegar no zero novamente.
+                              </small>
+                            )}
                           </div>
                         )}
                         <button
@@ -2065,6 +2070,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
           {screen === "simulator" && (
             <Simulator
               data={data}
+              demo={demo}
               onCreateGoal={(preset) => newRecord("goals", preset)}
             />
           )}

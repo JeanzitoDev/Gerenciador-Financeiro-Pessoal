@@ -47,11 +47,31 @@ const defaults = {
   rentInsurance: "0,00",
 };
 type Values = typeof defaults;
+const demoReferences: Record<"vehicle" | "home", Reference> = {
+  vehicle: {
+    monthly_rate: 0.0208,
+    source:
+      "Banco Central · Aquisição de veículos · série 25471 (referência de demonstração)",
+    source_url:
+      "https://dadosabertos.bcb.gov.br/dataset/25471-taxa-media-mensal-de-juros-das-operacoes-de-credito-com-recursos-livres---pessoas-fisicas---a",
+    date: "01/10/2026",
+  },
+  home: {
+    monthly_rate: 0.009112,
+    source:
+      "Banco Central · Financiamento imobiliário · série 20772 (referência de demonstração)",
+    source_url:
+      "https://dadosabertos.bcb.gov.br/dataset/20772-taxa-media-de-juros-das-operacoes-de-credito-com-recursos-direcionados---pessoas-fisicas---fi",
+    date: "01/10/2026",
+  },
+};
 export default function Simulator({
   data,
+  demo = false,
   onCreateGoal,
 }: {
   data?: FinanceData;
+  demo?: boolean;
   onCreateGoal?: (preset: Record<string, unknown>) => void;
 }) {
   const [values, setValues] = useState<Values>(defaults);
@@ -158,6 +178,23 @@ export default function Simulator({
         `/api/indicators/credit?kind=${values.category}`,
         { signal: active.signal, cache: "no-store" },
       );
+      if (
+        response.status === 401 &&
+        demo &&
+        (values.category === "vehicle" || values.category === "home")
+      ) {
+        if (active.signal.aborted) return;
+        const fallback = demoReferences[values.category];
+        setValues((old) => ({
+          ...old,
+          monthlyRate: (fallback.monthly_rate * 100)
+            .toFixed(6)
+            .replace(".", ","),
+        }));
+        setReference(fallback);
+        setResult(null);
+        return;
+      }
       const body = await response.json();
       if (!response.ok) throw new Error(body.error);
       if (

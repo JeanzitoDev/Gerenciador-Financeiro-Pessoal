@@ -466,6 +466,35 @@ describe("fase 2.1 — aparência e calendários", () => {
       screen.getByRole("button", { name: "Abrir calendário: Data" }),
     );
   });
+
+  it("exibe todos os dias do mês sem cortar pela metade quando o campo está no meio do modal no celular", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        if (this.classList.contains("date-control"))
+          return new DOMRect(24, 340, 327, 44);
+        if (this.tagName === "DIALOG") return new DOMRect(12, 40, 351, 580);
+        if (this.classList.contains("dialog-head"))
+          return new DOMRect(12, 40, 351, 70);
+        if (this.classList.contains("dialog-foot"))
+          return new DOMRect(12, 555, 351, 65);
+        return new DOMRect();
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(320);
+    const user = userEvent.setup();
+    render(
+      <dialog open>
+        <div className="dialog-head" />
+        <DateControl value="2026-10-18" onChange={() => {}} label="Data" />
+        <div className="dialog-foot" />
+      </dialog>,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Abrir calendário: Data" }),
+    );
+    const popup = screen.getByRole("group", { name: "Calendário: Data" });
+    expect(Number.parseFloat(popup.style.maxHeight)).toBeGreaterThanOrEqual(320);
+  });
 });
 
 describe("fase 2.2 — rotina e consistência", () => {
@@ -1308,6 +1337,11 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
     );
     await user.click(dialog.getByRole("button", { name: "Salvar" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await user.click(screen.getByRole("button", { name: "Marcados" }));
+    expect(
+      screen.getByText(/Nenhum número marcado nesta faixa ainda/),
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Todos" }));
     await user.click(
       screen.getByRole("button", { name: "R$ 10 (disponível)" }),
     );
@@ -1348,7 +1382,7 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
 
   it("simula aluguel de imóvel com caução de 3x o aluguel", async () => {
     const user = userEvent.setup();
-    render(<Simulator />);
+    render(<Simulator demo />);
     await chooseOption("O que você está planejando?", "Aluguel de imóvel");
     await user.type(
       screen.getByLabelText("Valor do aluguel mensal (R$)"),
@@ -1375,6 +1409,27 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
     expect(
       screen.getByRole("region", { name: "Resultado da compra" }).textContent,
     ).toContain("Caução na entrada");
+
+    // Na rota /demo (sem sessão autenticada), o botão de juros médios do Banco Central usa a referência de demonstração se a API retornar 401
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          { error: "Sua sessão expirou. Entre novamente." },
+          { status: 401 },
+        ),
+      ),
+    );
+    await chooseOption("O que você está planejando?", "Carro ou moto");
+    await chooseOption("Como pretende pagar?", "Parcelado ou financiado");
+    await user.click(
+      screen.getByRole("button", {
+        name: "Usar juros médios do Banco Central",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByText(/referência de demonstração/)).toBeTruthy(),
+    );
   });
 
   it("permite criar conta corrente com cheque especial e consome o limite quando despesa paga supera o saldo inicial", async () => {
@@ -1387,12 +1442,20 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
     const opening = dialog.getByLabelText("Saldo inicial (R$)");
     await user.clear(opening);
     await user.type(opening, "300,00");
-    await user.click(
-      dialog.getByLabelText("Esta conta possui limite de cheque especial"),
+    const checkbox = dialog.getByLabelText(
+      "Esta conta possui limite de cheque especial",
     );
+    expect(checkbox.closest("label")?.className).toContain("checkbox-field");
+    await user.click(checkbox);
     await user.type(
       dialog.getByLabelText("Limite do cheque especial (R$)"),
       "1000,00",
+    );
+    expect(screen.getByRole("dialog").textContent).toContain(
+      "deixando a conta negativa. Sempre que entrar valor na conta, o limite do cheque especial vai sendo compensado até chegar no zero novamente.",
+    );
+    expect(screen.getByRole("dialog").textContent).not.toContain(
+      "fôlego total",
     );
     await user.click(dialog.getByRole("button", { name: "Salvar" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -1415,5 +1478,8 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
 
     expect(card.textContent).toContain("Em uso do cheque especial");
     expect(card.textContent).toContain("50% usado");
+    expect(card.textContent).toContain(
+      "Novas entradas compensam o limite até a conta chegar no zero novamente.",
+    );
   });
 });

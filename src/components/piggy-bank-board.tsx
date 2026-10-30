@@ -174,7 +174,7 @@ export default function PiggyBankBoard({
                   <button
                     key={key}
                     type="button"
-                    className={rangePage === key ? "active" : ""}
+                    className={rangePage === key ? "selected active" : ""}
                     onClick={() => setRangePage(key)}
                   >
                     {label}
@@ -193,7 +193,7 @@ export default function PiggyBankBoard({
                 <button
                   key={key}
                   type="button"
-                  className={statusFilter === key ? "active" : ""}
+                  className={statusFilter === key ? "selected active" : ""}
                   onClick={() => setStatusFilter(key)}
                 >
                   {label}
@@ -239,14 +239,18 @@ export default function PiggyBankBoard({
           })}
           {visibleNumbers.length === 0 && (
             <p className="empty-inline">
-              Nenhum número nesta faixa com o filtro selecionado.
+              {statusFilter === "marked"
+                ? "Nenhum número marcado nesta faixa ainda. Toque nos números livres na aba Todos ou Livres para guardar no cofrinho."
+                : statusFilter === "pending"
+                  ? "Todos os números desta faixa já foram marcados no cofrinho!"
+                  : "Nenhum número nesta faixa com o filtro selecionado."}
             </p>
           )}
         </div>
 
         {selected.length > 0 && (
           <div className="piggy-bank-action">
-            <div>
+            <div className="piggy-bank-selection">
               <strong>
                 {selected.length}{" "}
                 {selected.length === 1 ? "número selecionado" : "números selecionados"}:{" "}

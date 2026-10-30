@@ -15,18 +15,17 @@ Copie e execute o conteúdo desse arquivo no **SQL Editor** do Supabase antes ou
 1. **Opção de cheque especial ao criar ou editar conta corrente (`src/components/record-form.tsx`)**
    - Ao cadastrar ou editar uma **Conta corrente** (`checking`), é possível marcar **"Esta conta possui limite de cheque especial"** e informar o **Limite do cheque especial (R$)**.
    - Inclui seletor rápido de situação do saldo inicial (**Saldo positivo (+)** ou **No cheque especial (−)**) para facilitar o preenchimento também em teclados numéricos de celular.
-   - Exibe prévia imediata de quanto do cheque especial já está em uso (caso o saldo inicial seja negativo) ou qual será o fôlego total (`saldo inicial + limite do cheque especial`).
+   - Exibe explicação clara de que, quando uma despesa paga supera o saldo da conta, primeiro o saldo é abatido e a diferença compromete o limite do cheque especial (deixando a conta negativa), sendo compensado conforme entram novos valores até voltar a zero.
 
 2. **Consumo automático do limite quando a despesa paga supera o saldo (`src/lib/finance/engine.ts`, `src/lib/demo.ts`, `supabase/migrations/202610290006_phase234.sql`)**
-   - Quando o saldo inicial somado às entradas realizadas é menor do que as despesas pagas, o saldo da conta fica negativo e **consome automaticamente o limite do cheque especial**:
-     - `usedCents`: quanto do limite contratado está sendo usado no momento.
+   - Quando o saldo inicial somado às entradas realizadas é menor do que as despesas pagas, o saldo da conta fica negativo e **compromete automaticamente o limite do cheque especial**:
+     - `usedCents`: quanto do limite contratado está comprometido no momento.
      - `remainingCents`: quanto ainda resta disponível no cheque especial.
-     - `totalAvailableCents`: fôlego total de pagamento (`saldo livre + limite de cheque especial`).
-   - Quando novas receitas entram na conta, o limite do cheque especial é recomposto automaticamente.
-   - Se um lançamento confirmado ultrapassar a soma do saldo com o limite do cheque especial contratado, a operação é bloqueada com mensagem clara tanto no aplicativo quanto no PostgreSQL.
+   - Sempre que novos valores entram na conta, o limite do cheque especial vai sendo compensado até chegar no zero novamente.
+   - Se um lançamento confirmado ultrapassar o saldo e estourar o limite do cheque especial contratado, a operação é bloqueada com mensagem clara tanto no aplicativo quanto no PostgreSQL.
 
 3. **Acompanhamento nas telas de Contas, Visão Geral e Relatórios (`src/components/finance-app.tsx`, `src/lib/finance/reports.ts`)**
-   - **Contas**: cada conta corrente com cheque especial exibe um painel próprio com barra de consumo, percentual usado, valor utilizado (`R$ X de R$ Y`), limite disponível e fôlego total.
+   - **Contas**: cada conta corrente com cheque especial exibe um painel próprio com barra de consumo, percentual usado, limite do cheque especial, valor comprometido do limite e limite disponível.
    - **Visão geral**: a barra de indicadores exibe o cheque especial disponível ou o valor atualmente em uso.
    - **Relatórios**: a tabela **Movimento por conta no mês** detalha o uso e o limite livre do cheque especial de cada conta corrente.
 

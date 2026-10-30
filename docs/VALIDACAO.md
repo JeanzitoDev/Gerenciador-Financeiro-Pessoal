@@ -16,7 +16,7 @@ Base local: v2.3.3. Esta entrega evolui a base para a **v2.3.4**, preservando os
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Cadastro de cheque especial   | Opção `"Esta conta possui limite de cheque especial"` exibida em contas correntes (`kind = 'checking'`), com campo de limite em reais, prévia automática de limite consumido/disponível e seletor de sinal |
 | Consumo e recomposição        | Quando uma despesa paga supera o saldo próprio da conta, o excedente consome o cheque especial (`accountOverdraft`), recompondo o limite quando novas receitas entram e barrando excessos além de `saldo + limite` |
-| Painéis e Relatórios          | Cartão da conta corrente exibe barra e métricas de uso do limite (`Usado do limite`, `Limite disponível` e `Fôlego total`); `Visão geral` e `Relatórios` mostram o resumo do cheque especial   |
+| Painéis e Relatórios          | Cartão da conta corrente exibe barra e métricas de uso do limite (`Limite do cheque especial`, `Comprometido do limite` e `Limite disponível`); `Visão geral` e `Relatórios` mostram o resumo do cheque especial |
 | Banco de dados (PGlite / SQL) | Coluna `overdraft_cents` adicionada em `public.accounts` com `check` restrito a `checking` e validação na trigger `public.check_finance_integrity()` impedindo saldo abaixo de `-overdraft_cents` |
 
 ## Evidência específica da 2.3.3

@@ -66,16 +66,52 @@ export default function useCalendarPosition(
       );
       const below = Math.max(0, bottomEdge - rect.bottom - 8);
       const above = Math.max(0, rect.top - topEdge - 8);
-      const useAbove =
-        below < Math.min(popup.current.scrollHeight, preferredMaxHeight) &&
-        above > below;
+      const neededHeight = Math.min(
+        popup.current.scrollHeight || 320,
+        preferredMaxHeight,
+      );
+      const useAbove = below < neededHeight && above > below;
+      const bestSide = useAbove ? above : below;
+      if (
+        preferredMaxHeight === Number.POSITIVE_INFINITY &&
+        bestSide < Math.min(neededHeight, 280)
+      ) {
+        const dialogWindow = bottomEdge - topEdge;
+        const spanTop =
+          dialogWindow >= 300
+            ? topEdge
+            : Math.max(16, (bounds?.top ?? 16) + 12);
+        const spanBottom =
+          dialogWindow >= 300
+            ? bottomEdge
+            : Math.min(
+                window.innerHeight - 16,
+                (bounds?.bottom ?? window.innerHeight - 16) - 12,
+              );
+        const spanHeight = Math.max(bestSide, spanBottom - spanTop);
+        const effectiveHeight = Math.min(neededHeight, spanHeight);
+        const idealTop = rect.top + rect.height / 2 - effectiveHeight / 2;
+        const clampedTop = Math.max(
+          spanTop,
+          Math.min(idealTop, spanBottom - effectiveHeight),
+        );
+        setStyle({
+          width,
+          left: left - rect.left,
+          right: "auto",
+          top: clampedTop - rect.top,
+          bottom: "auto",
+          maxHeight: Math.min(spanHeight, preferredMaxHeight),
+        });
+        return;
+      }
       setStyle({
         width,
         left: left - rect.left,
         right: "auto",
         top: useAbove ? "auto" : "calc(100% + 8px)",
         bottom: useAbove ? "calc(100% + 8px)" : "auto",
-        maxHeight: Math.min(useAbove ? above : below, preferredMaxHeight),
+        maxHeight: Math.min(bestSide, preferredMaxHeight),
       });
     };
     position();

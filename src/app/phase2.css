@@ -1902,12 +1902,42 @@ input[type="radio"] {
   color: var(--accent);
   font-size: 14px;
 }
+.goal-card,
+.piggy-bank-details,
+.piggy-bank-box,
+.piggy-bank-head {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
 .piggy-bank-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.piggy-bank-filters .segmented {
+  flex-wrap: wrap;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.piggy-bank-filters .segmented > button {
+  flex: 1 1 auto;
+  text-align: center;
+  justify-content: center;
+  padding: 6px 10px;
+  min-height: 32px;
+  font-size: 12px;
+}
+.segmented > button.active {
+  color: var(--accent);
+  background: var(--panel);
+  box-shadow: 0 2px 6px #00000006;
 }
 .piggy-bank-grid {
   display: grid;
@@ -1920,6 +1950,17 @@ input[type="radio"] {
   border-radius: 14px;
   background: var(--panel);
   overscroll-behavior: contain;
+}
+.piggy-bank-grid > .empty-inline {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  max-width: 44ch;
+  justify-self: center;
 }
 .piggy-cell {
   min-height: 36px;
@@ -1945,13 +1986,15 @@ input[type="radio"] {
   transform: translateY(-1px);
 }
 .piggy-cell.selected {
-  background: var(--accent);
+  background: var(--accent-soft);
   border-color: var(--accent);
-  color: #fff;
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 :root[data-theme="dark"] .piggy-cell.selected {
-  color: #181824;
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
 }
 .piggy-cell.marked {
   background: var(--green-soft);
@@ -1963,40 +2006,107 @@ input[type="radio"] {
 .piggy-bank-action {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   padding: 14px;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
   background: var(--panel);
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.piggy-bank-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.piggy-bank-selection > strong {
+  font-size: 14px;
+  line-height: 1.4;
+}
+.piggy-bank-selection > small {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .piggy-bank-action p {
   margin: 4px 0 0;
 }
+.piggy-bank-controls,
 .piggy-action-controls {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 10px;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
 }
+.piggy-bank-controls .form-field,
 .piggy-action-controls .form-field {
-  flex: 1 1 200px;
   margin: 0;
+}
+.piggy-bank-controls .button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 2px;
+  width: 100%;
+}
+.piggy-bank-controls .button-row > .button {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.35;
+  font-size: 13px;
+  padding: 10px 14px;
+}
+.piggy-bank-controls .button.ghost,
+.goal-card .piggy-bank-controls .button.ghost {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+.piggy-bank-controls .button.primary,
+.goal-card .piggy-bank-controls .button.primary,
+:root[data-theme="dark"] .piggy-bank-controls .button.primary,
+:root[data-theme="dark"] .goal-card .piggy-bank-controls .button.primary {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--text);
+}
+.piggy-bank-controls .button.primary:hover:not(:disabled),
+.goal-card .piggy-bank-controls .button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 26%, var(--panel-soft));
 }
 @media (max-width: 600px) {
   .piggy-bank-stats {
     align-items: flex-start;
   }
+  .piggy-bank-controls .button-row > .button,
   .piggy-action-controls .button {
     width: 100%;
   }
 }
 
-/* Phase 2.3.3: wider calendar select options and enriched reports analytics. */
+/* Phase 2.3.3: wider calendar select options, compact full-month mobile calendar and enriched reports analytics. */
+.calendar-popover {
+  padding: 12px;
+}
 .calendar-heading {
   grid-template-columns: 34px minmax(0, 1.35fr) minmax(88px, 0.95fr) 34px;
+  margin-bottom: 6px;
+}
+.calendar-heading > .icon-button {
+  height: 36px;
+  min-height: 36px;
 }
 .calendar-heading .select-trigger {
-  padding: 8px 10px;
+  min-height: 36px;
+  padding: 6px 10px;
   gap: 6px;
 }
 .calendar-heading .select-options {
@@ -2007,6 +2117,26 @@ input[type="radio"] {
 .calendar-heading .select-option {
   padding: 10px 14px;
   gap: 12px;
+}
+.calendar-week {
+  margin-bottom: 4px;
+}
+.calendar-grid {
+  gap: 2px;
+}
+.calendar-grid button {
+  height: 32px;
+  min-height: 32px;
+  aspect-ratio: auto;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.calendar-foot {
+  margin-top: 8px;
+  padding-top: 6px;
+}
+.calendar-foot .text-button {
+  min-height: 32px;
 }
 .reports-toolbar {
   display: flex;
@@ -2257,5 +2387,15 @@ input[type="radio"] {
 }
 .overdraft-metrics > span > strong.negative {
   color: var(--rose);
+}
+.overdraft-note {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.45;
+  padding-top: 4px;
+  border-top: 1px dashed var(--line);
+}
+.goal-conditions > .form-help {
+  margin: 4px 0 0;
 }
 

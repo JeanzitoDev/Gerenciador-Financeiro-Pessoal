@@ -500,7 +500,7 @@ export default function RecordForm({
                       </button>
                     </div>
                   </div>
-                  <label className="check-row">
+                  <label className="checkbox-field">
                     <input
                       type="checkbox"
                       checked={hasOverdraft}
@@ -513,7 +513,7 @@ export default function RecordForm({
                     <span>Esta conta possui limite de cheque especial</span>
                   </label>
                   {hasOverdraft && (
-                    <div className="goal-conditions">
+                    <div className="goal-conditions stack">
                       {field(
                         "overdraft_cents",
                         "Limite do cheque especial (R$)",
@@ -541,7 +541,8 @@ export default function RecordForm({
                             <p className="form-help">
                               Informe quanto o banco disponibiliza de cheque
                               especial. Quando uma despesa paga ultrapassar o
-                              saldo em conta, a diferença consumirá este limite.
+                              saldo em conta, a diferença consumirá este limite
+                              e deixará a conta negativa.
                             </p>
                           );
                         const used =
@@ -554,21 +555,27 @@ export default function RecordForm({
                           <p className="form-help">
                             {opening < 0 ? (
                               <>
-                                O saldo inicial negativo já consome{" "}
-                                <strong>{formatMoney(used)}</strong> do cheque
-                                especial · Restam{" "}
+                                O saldo inicial negativo (
+                                <strong>{formatMoney(opening)}</strong>)
+                                compromete <strong>{formatMoney(used)}</strong>{" "}
+                                do cheque especial · Restam{" "}
                                 <strong>{formatMoney(remaining)}</strong> de
-                                limite disponível.
+                                limite disponível. Sempre que entrar valor na
+                                conta, o limite do cheque especial vai sendo
+                                compensado até chegar no zero novamente.
                               </>
                             ) : (
                               <>
-                                Se uma despesa paga for maior que o saldo em
+                                Se uma despesa paga for maior que o saldo da
                                 conta (<strong>{formatMoney(opening)}</strong>),
-                                a diferença consumirá automaticamente até{" "}
+                                vai subtrair os{" "}
+                                <strong>{formatMoney(opening)}</strong> do saldo
+                                e descontar a diferença do limite de{" "}
                                 <strong>{formatMoney(limit)}</strong> do cheque
-                                especial (fôlego total de{" "}
-                                <strong>{formatMoney(opening + limit)}</strong>
-                                ).
+                                especial, deixando a conta negativa. Sempre que
+                                entrar valor na conta, o limite do cheque
+                                especial vai sendo compensado até chegar no zero
+                                novamente.
                               </>
                             )}
                           </p>
