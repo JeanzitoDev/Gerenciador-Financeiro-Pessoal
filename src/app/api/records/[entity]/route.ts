@@ -9,7 +9,11 @@ import {
 } from "@/lib/api";
 import { schemas, isEntity, uuidSchema } from "@/lib/validation";
 import { consumeBudget } from "@/lib/budget";
-import { encodeCreditCardAccountForLegacyDb } from "@/lib/finance/credit-cards";
+import {
+  encodeCreditCardAccountForLegacyDb,
+  shiftCreditCardEntryDate,
+} from "@/lib/finance/credit-cards";
+import { obfuscateRecordPayload } from "@/lib/privacy-crypto";
 import { today } from "@/lib/finance/dates";
 type Context = { params: Promise<{ entity: string }> };
 async function mutate(
@@ -52,7 +56,11 @@ async function mutate(
             422,
             parsedItem.error.issues[0]?.message ?? "Revise os campos.",
           );
-        return { ...parsedItem.data, user_id: user.id };
+        return obfuscateRecordPayload(
+          "transactions",
+          { ...parsedItem.data, user_id: user.id },
+          user.id,
+        );
       });
       const { data, error } = await supabase
         .from("transactions")
@@ -94,10 +102,69 @@ async function mutate(
           );
         const { error: insertErr } = await supabase
           .from("transactions")
-          .insert({ ...parsedPay.data, user_id: user.id });
+          .insert(
+            obfuscateRecordPayload(
+              "transactions",
+              { ...parsedPay.data, user_id: user.id },
+              user.id,
+            ),
+          );
         if (insertErr) throw databaseError(insertErr);
       }
       return json({ ok: true, id: ids[0] });
+    }
+    if (
+      entity === "transactions" &&
+      method === "PUT" &&
+      body.shift_cc_entry &&
+      typeof body.shift_cc_entry === "object"
+    ) {
+      const shiftCfg = body.shift_cc_entry as Record<string, unknown>;
+      const parsedId = uuidSchema.safeParse(shiftCfg.id);
+      if (!parsedId.success) throw new ApiError(400, "Identificador inválido.");
+      const deltaMonths = Math.trunc(Number(shiftCfg.delta_months));
+      if (!Number.isFinite(deltaMonths) || deltaMonths === 0 || Math.abs(deltaMonths) > 12)
+        throw new ApiError(422, "Deslocamento de fatura inválido.");
+      const dueDay =
+        typeof shiftCfg.due_day === "number" ? shiftCfg.due_day : undefined;
+      const groupPrefix =
+        typeof shiftCfg.group_prefix === "string" &&
+        /^cc:[a-zA-Z0-9_-]+:$/.test(shiftCfg.group_prefix)
+          ? shiftCfg.group_prefix
+          : null;
+
+      let rowsToShift: { id: string; date: string; external_id: string | null }[] = [];
+      if (groupPrefix) {
+        const { data: grpRows, error: grpErr } = await supabase
+          .from("transactions")
+          .select("id,date,external_id,status")
+          .eq("user_id", user.id)
+          .eq("status", "planned")
+          .like("external_id", `${groupPrefix}%`);
+        if (grpErr) throw databaseError(grpErr);
+        rowsToShift = grpRows ?? [];
+      } else {
+        const { data: singleRow, error: singleErr } = await supabase
+          .from("transactions")
+          .select("id,date,external_id,status")
+          .eq("user_id", user.id)
+          .eq("id", parsedId.data)
+          .maybeSingle();
+        if (singleErr) throw databaseError(singleErr);
+        if (singleRow) rowsToShift = [singleRow];
+      }
+      if (!rowsToShift.length)
+        throw new ApiError(404, "Lançamento não encontrado para mover.");
+      for (const r of rowsToShift) {
+        const shifted = shiftCreditCardEntryDate(r, deltaMonths, dueDay);
+        const { error: upErr } = await supabase
+          .from("transactions")
+          .update({ date: shifted.date, external_id: shifted.external_id })
+          .eq("id", r.id)
+          .eq("user_id", user.id);
+        if (upErr) throw databaseError(upErr);
+      }
+      return json({ ok: true, id: parsedId.data });
     }
     let id: string | undefined;
     if (method !== "POST") {
@@ -175,6 +242,7 @@ async function mutate(
       delete dbPayload.closing_day;
       delete dbPayload.due_day;
     }
+    dbPayload = obfuscateRecordPayload(entity, dbPayload, user.id);
     const runAccountOrEntityQuery = async (payloadToSave: Record<string, unknown>) => {
       const q =
         method === "POST"
@@ -196,6 +264,7 @@ async function mutate(
     ) {
       const fallbackPayload = encodeCreditCardAccountForLegacyDb(
         parsed.data as Record<string, unknown>,
+        user.id,
       );
       ({ data, error } = await runAccountOrEntityQuery(fallbackPayload));
     }

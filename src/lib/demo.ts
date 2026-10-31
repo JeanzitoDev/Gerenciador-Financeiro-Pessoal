@@ -5,7 +5,10 @@ import { balance, goalFunded, reserved } from "./finance/engine";
 import { recurrenceDates } from "./finance/recurrence";
 import { schemas, profileSchema } from "./validation";
 import { validateGoalGraph } from "./finance/goal-dependencies";
-import { formatCreditCardExternalId } from "./finance/credit-cards";
+import {
+  formatCreditCardExternalId,
+  shiftCreditCardEntryDate,
+} from "./finance/credit-cards";
 import { formatPiggyBankNote } from "./finance/piggy-bank";
 export const DEMO_USER = "00000000-0000-4000-8000-000000000001";
 const uid = (n: number) =>
@@ -22,6 +25,7 @@ export function demoData(): FinanceData {
     cardItau = uid(14),
     cardNubank = uid(15),
     bankSecondary = uid(16),
+    walletShopee = uid(17),
     reserve = uid(20),
     trip = uid(21),
     course = uid(22),
@@ -94,6 +98,18 @@ export function demoData(): FinanceData {
       credit_limit_cents: 450000,
       closing_day: 8,
       due_day: 15,
+    },
+    {
+      ...owned,
+      id: walletShopee,
+      name: "Shopee SParcelado",
+      kind: "credit_card",
+      institution: "Shopee (SParcelado)",
+      opening_cents: 0,
+      opening_date: previous,
+      credit_limit_cents: 120000,
+      closing_day: 5,
+      due_day: 12,
     },
   ];
   const transactions: Entry[] = [];
@@ -288,6 +304,28 @@ export function demoData(): FinanceData {
       }),
     });
   }
+  const shopeeBuyDate = `${month}-${String(Math.min(3, day)).padStart(2, "0")}`;
+  for (let i = 1; i <= 3; i++) {
+    const dueMonth = addMonths(`${month}-01`, i - 1).slice(0, 7);
+    const dueDate = `${dueMonth}-12`;
+    add({
+      kind: "expense",
+      description: `Kit casa & organização Shopee (${i}/3)`,
+      amount_cents: 8990,
+      date: dueDate,
+      status: "planned",
+      source_account_id: walletShopee,
+      target_account_id: null,
+      category: "Casa",
+      external_id: formatCreditCardExternalId({
+        groupId: "demo-shopee",
+        installmentNumber: i,
+        totalInstallments: 3,
+        purchaseDate: shopeeBuyDate,
+        dueDate,
+      }),
+    });
+  }
   add({
     kind: "expense",
     description: "Farmácia e bem-estar",
@@ -429,6 +467,22 @@ export function demoData(): FinanceData {
         auto_post: false,
         auto_from: now,
       },
+      {
+        ...owned,
+        id: uid(51),
+        kind: "expense",
+        description: "Spotify + iCloud (Cartão)",
+        amount_cents: 3980,
+        source_account_id: cardItau,
+        target_account_id: null,
+        category: "Assinaturas",
+        frequency: "monthly",
+        start_date: `${month}-20`,
+        end_date: null,
+        active: true,
+        auto_post: false,
+        auto_from: now,
+      },
     ],
     profile: {
       user_id: DEMO_USER,
@@ -544,6 +598,38 @@ export function mutateDemo(
     next.transactions = next.transactions.filter(
       (e) => !e.external_id?.startsWith(prefix),
     );
+    validateDemo(next);
+    return next;
+  }
+  if (
+    entity === "transactions" &&
+    method === "PUT" &&
+    payload.shift_cc_entry &&
+    typeof payload.shift_cc_entry === "object"
+  ) {
+    const shiftCfg = payload.shift_cc_entry as Record<string, unknown>;
+    const targetId = String(shiftCfg.id ?? "");
+    const deltaMonths = Math.trunc(Number(shiftCfg.delta_months));
+    if (!Number.isFinite(deltaMonths) || deltaMonths === 0 || Math.abs(deltaMonths) > 12)
+      throw new Error("Deslocamento de fatura inválido.");
+    const dueDay =
+      typeof shiftCfg.due_day === "number" ? shiftCfg.due_day : undefined;
+    const groupPrefix =
+      typeof shiftCfg.group_prefix === "string" &&
+      /^cc:[a-zA-Z0-9_-]+:$/.test(shiftCfg.group_prefix)
+        ? shiftCfg.group_prefix
+        : null;
+    for (const e of next.transactions) {
+      if (e.status !== "planned") continue;
+      const matches = groupPrefix
+        ? !!e.external_id?.startsWith(groupPrefix)
+        : e.id === targetId;
+      if (matches) {
+        const shifted = shiftCreditCardEntryDate(e, deltaMonths, dueDay);
+        e.date = shifted.date;
+        e.external_id = shifted.external_id;
+      }
+    }
     validateDemo(next);
     return next;
   }

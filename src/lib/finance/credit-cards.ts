@@ -1,10 +1,47 @@
-import type { Account, Entry } from "../types";
+import type { Account, Entry, Recurrence } from "../types";
+import { obfuscateText } from "../privacy-crypto";
 import { addMonths } from "./dates";
 import { sumCents } from "./money";
+import { recurrenceDates } from "./recurrence";
 
 const CC_NAME_PREFIX = /^\[\[CC:([^|\]]*)\|(\d{1,2})\|(\d{1,2})\]\]\s*(.*)$/;
 const CC_EXT_PREFIX =
   /^cc:([^:]+):(\d+)\/(\d+):(\d{4}-\d{2}-\d{2})(?::(\d{4}-\d{2}-\d{2}))?$/;
+
+const CREDIT_WALLET_KEYWORDS = [
+  "shopee",
+  "sparcelado",
+  "spaylater",
+  "mercado crédito",
+  "mercado credito",
+  "mercado pago",
+  "crediário",
+  "crediario",
+  "carnê",
+  "carne",
+  "magalu",
+  "casas bahia",
+  "pagaleve",
+  "picpay",
+  "ame digital",
+  "shein",
+  "aliexpress",
+  "carteira",
+  "loja",
+  "renner",
+  "riachuelo",
+  "c&a",
+  "havan",
+];
+
+export function isCreditWalletAccount(
+  account: Pick<Account, "name" | "institution">,
+): boolean {
+  const haystack = `${account.name ?? ""} ${account.institution ?? ""}`
+    .toLowerCase()
+    .trim();
+  return CREDIT_WALLET_KEYWORDS.some((kw) => haystack.includes(kw));
+}
 
 export interface CreditCardInstallmentMeta {
   groupId: string;
@@ -49,6 +86,12 @@ export interface CreditCardSummary {
   closingDay: number;
   currentInvoice: CreditCardInvoiceSummary;
   upcomingInvoices: { month: string; openCents: number; count: number }[];
+  allInvoices: {
+    month: string;
+    openCents: number;
+    totalCents: number;
+    count: number;
+  }[];
 }
 
 export function clampDay(day: number, fallback = 10): number {
@@ -185,11 +228,37 @@ export function getEntryInvoiceMonth(entry: Entry): string {
   return getEntryDueDate(entry).slice(0, 7);
 }
 
+export function shiftCreditCardEntryDate(
+  entry: Pick<Entry, "date" | "external_id">,
+  deltaMonths: number,
+  dueDay?: number,
+): { date: string; external_id: string | null } {
+  const meta = parseCreditCardMeta(entry.external_id);
+  const currentDue = meta?.dueDate ?? entry.date;
+  const shiftedMonth = addMonths(`${currentDue.slice(0, 7)}-01`, deltaMonths).slice(
+    0,
+    7,
+  );
+  const targetDay = dueDay ?? (Number(currentDue.slice(8, 10)) || 10);
+  const newDueDate = buildDateWithDay(shiftedMonth, targetDay);
+  const newExt = meta
+    ? formatCreditCardExternalId({
+        ...meta,
+        dueDate: newDueDate,
+      })
+    : (entry.external_id ?? null);
+  return {
+    date: newDueDate,
+    external_id: newExt,
+  };
+}
+
 export function creditCardSummary(
   card: Account,
   entries: Entry[],
   month: string,
   asOf: string,
+  recurrences: Recurrence[] = [],
 ): CreditCardSummary {
   const limitCents = Math.max(0, card.credit_limit_cents ?? 0);
   const dueDay = clampDay(card.due_day ?? 10, 10);
@@ -198,16 +267,80 @@ export function creditCardSummary(
     defaultClosingDay(dueDay),
   );
 
-  const cardEntries = entries.filter(
-    (e) =>
-      e.source_account_id === card.id &&
-      e.kind === "expense" &&
-      e.status !== "cancelled",
+  const rawCardEntries = entries.filter(
+    (e) => e.source_account_id === card.id && e.kind === "expense",
+  );
+  const activeCardRecurrences = recurrences.filter(
+    (r) =>
+      r.active && r.kind === "expense" && r.source_account_id === card.id,
   );
 
+  const projectedEntries: Entry[] = [];
+  if (activeCardRecurrences.length > 0) {
+    const monthsToProject = new Set<string>([month]);
+    const currentMonth = asOf.slice(0, 7);
+    for (let i = 0; i <= 3; i++) {
+      monthsToProject.add(addMonths(`${currentMonth}-01`, i).slice(0, 7));
+    }
+    for (const targetMonth of monthsToProject) {
+      const mStart = `${targetMonth}-01`;
+      const mNext = addMonths(mStart, 1);
+      for (const rule of activeCardRecurrences) {
+        const occDates = recurrenceDates(
+          rule.start_date,
+          rule.frequency,
+          mStart,
+          mNext,
+          rule.end_date,
+        ).filter((d) => d.startsWith(targetMonth));
+        for (const occDate of occDates) {
+          const alreadyMaterialized = rawCardEntries.some(
+            (e) =>
+              e.recurrence_id === rule.id &&
+              (e.occurrence_date === occDate ||
+                e.occurrence_date?.startsWith(targetMonth) ||
+                e.date.startsWith(targetMonth)),
+          );
+          if (alreadyMaterialized) continue;
+          const invoiceDue = buildDateWithDay(targetMonth, dueDay);
+          projectedEntries.push({
+            id: `virtual-rec-${rule.id}-${occDate}`,
+            user_id: card.user_id,
+            kind: "expense",
+            description: rule.description,
+            amount_cents: rule.amount_cents,
+            date: invoiceDue,
+            status: "planned",
+            source_account_id: card.id,
+            target_account_id: null,
+            category: rule.category,
+            recurrence_id: rule.id,
+            occurrence_date: occDate,
+            source: "recurrence",
+            external_id: null,
+            import_batch_id: null,
+            categorization_rule_id: null,
+            gross_cents: null,
+            deductions_cents: null,
+          });
+        }
+      }
+    }
+  }
+
+  const cardEntries = [
+    ...rawCardEntries.filter((e) => e.status !== "cancelled"),
+    ...projectedEntries,
+  ];
+
+  const currentRealMonth = asOf.slice(0, 7);
   const usedCents = sumCents(
     cardEntries
-      .filter((e) => e.status === "planned")
+      .filter(
+        (e) =>
+          e.status === "planned" &&
+          (!e.recurrence_id || getEntryInvoiceMonth(e) <= currentRealMonth),
+      )
       .map((e) => e.amount_cents),
   );
   const availableCents = Math.max(0, limitCents - usedCents);
@@ -244,9 +377,26 @@ export function creditCardSummary(
   }
 
   const upcomingMap = new Map<string, { openCents: number; count: number }>();
+  const allMap = new Map<
+    string,
+    { openCents: number; totalCents: number; count: number }
+  >();
   for (const e of cardEntries) {
-    if (e.status !== "planned") continue;
     const invMonth = getEntryInvoiceMonth(e);
+    const curAll = allMap.get(invMonth) ?? {
+      openCents: 0,
+      totalCents: 0,
+      count: 0,
+    };
+    allMap.set(invMonth, {
+      openCents:
+        e.status === "planned"
+          ? sumCents([curAll.openCents, e.amount_cents])
+          : curAll.openCents,
+      totalCents: sumCents([curAll.totalCents, e.amount_cents]),
+      count: curAll.count + 1,
+    });
+    if (e.status !== "planned") continue;
     if (invMonth <= month) continue;
     const current = upcomingMap.get(invMonth) ?? { openCents: 0, count: 0 };
     upcomingMap.set(invMonth, {
@@ -255,6 +405,9 @@ export function creditCardSummary(
     });
   }
   const upcomingInvoices = [...upcomingMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([m, info]) => ({ month: m, ...info }));
+  const allInvoices = [...allMap.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([m, info]) => ({ month: m, ...info }));
 
@@ -275,6 +428,7 @@ export function creditCardSummary(
       entries: invoiceEntries,
     },
     upcomingInvoices,
+    allInvoices,
   };
 }
 
@@ -284,6 +438,7 @@ export function creditCardSummary(
  */
 export function encodeCreditCardAccountForLegacyDb(
   payload: Record<string, unknown>,
+  userId?: string,
 ): Record<string, unknown> {
   const inst = String(payload.institution ?? "")
     .replace(/[|\]]/g, " ")
@@ -296,7 +451,11 @@ export function encodeCreditCardAccountForLegacyDb(
   );
   const rawName = String(payload.name ?? "").trim() || inst || "Cartão";
   const prefix = `[[CC:${inst}|${dueDay}|${closingDay}]] `;
-  const encodedName = `${prefix}${rawName}`.slice(0, 80);
+  const availLen = Math.max(16, 80 - prefix.length);
+  const protectedName = userId
+    ? obfuscateText(rawName, userId, availLen)
+    : rawName;
+  const encodedName = `${prefix}${protectedName}`.slice(0, 80);
   return {
     name: encodedName,
     kind: "cash",

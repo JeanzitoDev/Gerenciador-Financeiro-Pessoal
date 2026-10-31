@@ -1,4 +1,4 @@
-# Meu Norte · v2.3.4
+# Meu Norte · v2.3.5
 
 Gerenciador financeiro pessoal em **Next.js, TypeScript, Tailwind CSS, Supabase Auth e PostgreSQL**. PWA com finanças online, BRL em centavos e dados separados por usuário.
 

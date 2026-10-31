@@ -2323,7 +2323,7 @@ input[type="radio"] {
   font-size: 13px;
 }
 .account-balance.negative {
-  color: var(--rose);
+  color: var(--red);
 }
 .overdraft-box {
   margin-top: 12px;
@@ -2336,8 +2336,8 @@ input[type="radio"] {
   gap: 8px;
 }
 .overdraft-box.active {
-  border-color: color-mix(in srgb, var(--rose) 38%, var(--line));
-  background: color-mix(in srgb, var(--rose) 7%, var(--panel-soft));
+  border-color: color-mix(in srgb, var(--red) 38%, var(--line));
+  background: color-mix(in srgb, var(--red) 7%, var(--panel-soft));
 }
 .overdraft-head {
   display: flex;
@@ -2354,20 +2354,23 @@ input[type="radio"] {
   font-weight: 650;
 }
 .overdraft-box.active .overdraft-head > strong {
-  color: var(--rose);
+  color: var(--red);
 }
 .overdraft-track {
-  height: 7px;
+  height: 8px;
   border-radius: 999px;
-  background: var(--line);
+  background: var(--line-strong, var(--line));
   overflow: hidden;
 }
 .overdraft-track > span {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: var(--rose);
+  background: linear-gradient(90deg, var(--accent), var(--red));
   transition: width 0.5s var(--ease-spring);
+}
+.overdraft-box.active .overdraft-track > span {
+  background: linear-gradient(90deg, var(--amber), var(--red));
 }
 .overdraft-metrics {
   display: grid;
@@ -2382,11 +2385,11 @@ input[type="radio"] {
   color: var(--muted);
 }
 .overdraft-metrics > span > strong {
-  color: var(--ink);
+  color: var(--text);
   font-weight: 600;
 }
 .overdraft-metrics > span > strong.negative {
-  color: var(--rose);
+  color: var(--red);
 }
 .overdraft-note {
   font-size: 11px;

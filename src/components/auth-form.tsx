@@ -22,6 +22,7 @@ export default function AuthForm({
     [message, setMessage] = useState(""),
     [error, setError] = useState("");
   const [existingAccount, setExistingAccount] = useState(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("confirmado") === "1")
       setMessage("E-mail confirmado! Entre para continuar.");
@@ -32,6 +33,7 @@ export default function AuthForm({
     setMessage("");
     setPassword("");
     setExistingAccount(false);
+    setAcceptedPrivacy(false);
   };
   const titles = {
     login: "Bom te ver por aqui.",
@@ -47,6 +49,12 @@ export default function AuthForm({
   };
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (mode === "signup" && !acceptedPrivacy) {
+      setError(
+        "Confirme que leu e concorda com o Aviso de Privacidade (LGPD) para criar sua conta.",
+      );
+      return;
+    }
     setBusy(true);
     setError("");
     setMessage("");
@@ -197,12 +205,31 @@ export default function AuthForm({
               </p>
             )}
             {mode === "signup" && (
-              <p className="signup-privacy">
-                Versão beta (teste) sem criptografia de ponta a ponta: o
-                administrador possui acesso técnico ao banco nesta fase. Leia{" "}
-                <Link href="/privacidade">como seus dados são tratados</Link>{" "}
-                antes de criar sua conta.
-              </p>
+              <div className="signup-privacy-box">
+                <label className="signup-consent-check">
+                  <input
+                    type="checkbox"
+                    checked={acceptedPrivacy}
+                    onChange={(e) => setAcceptedPrivacy(e.target.checked)}
+                    required
+                  />
+                  <span>
+                    Li e concordo com o{" "}
+                    <Link href="/privacidade">
+                      Aviso de Privacidade e Proteção de Dados (LGPD)
+                    </Link>{" "}
+                    e com o uso de cookies técnicos essenciais para manter minha
+                    sessão segura.
+                  </span>
+                </label>
+                <p className="signup-privacy">
+                  <ShieldCheck size={14} />
+                  <span>
+                    Seus lançamentos e nomes de contas são protegidos com
+                    isolamento por usuário e ofuscação criptográfica no banco.
+                  </span>
+                </p>
+              </div>
             )}
             <button
               type="submit"

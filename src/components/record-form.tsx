@@ -24,6 +24,7 @@ import {
   creditCardSummary,
   defaultClosingDay,
   formatCreditCardExternalId,
+  isCreditWalletAccount,
 } from "@/lib/finance/credit-cards";
 export type FormState = {
   entity: Entity;
@@ -50,7 +51,7 @@ const accountKinds = [
   ["cash", "Dinheiro"],
   ["benefit", "Benefícios · VA/VR"],
   ["investment", "Dinheiro guardado"],
-  ["credit_card", "Cartão de crédito (segregado)"],
+  ["credit_card", "Cartão de crédito / Crédito parcelado (segregado)"],
 ];
 const popularCardBanks = [
   "Nubank",
@@ -63,6 +64,16 @@ const popularCardBanks = [
   "Caixa",
   "XP",
   "BTG",
+];
+const popularCreditWallets = [
+  "Shopee (SParcelado)",
+  "Mercado Crédito",
+  "PicPay",
+  "Crediário Digital",
+  "MagaluPay",
+  "Pagaleve",
+  "Carnê Digital",
+  "Shein / AliExpress",
 ];
 const emptyDefaults = {
   name: "",
@@ -191,6 +202,20 @@ export default function RecordForm({
   const [customClosingDay, setCustomClosingDay] = useState(() =>
     Boolean(state.record?.closing_day),
   );
+  const [ccAccountFormat, setCcAccountFormat] = useState<"card" | "wallet">(
+    () => {
+      if (state.preset?.cc_format === "wallet") return "wallet";
+      if (state.record && state.entity === "accounts") {
+        return isCreditWalletAccount({
+          name: String(state.record.name ?? ""),
+          institution: String(state.record.institution ?? ""),
+        })
+          ? "wallet"
+          : "card";
+      }
+      return "card";
+    },
+  );
   const [ccPaymentMode, setCcPaymentMode] = useState<"single" | "installments">(
     () =>
       state.preset?.cc_mode === "installments" ? "installments" : "single",
@@ -211,19 +236,37 @@ export default function RecordForm({
     };
   }, []);
   const update = (key: string, value: string) =>
-    setValues((v) => ({
-      ...v,
-      [key]: value,
-      ...(key === "kind"
-        ? {
-            source_account_id: "",
-            target_account_id: "",
-            gross_cents: "",
-            deductions_cents: "",
-            status: "posted",
+    setValues((v) => {
+      const next: Record<string, string> = {
+        ...v,
+        [key]: value,
+        ...(key === "kind"
+          ? {
+              source_account_id: "",
+              target_account_id: "",
+              gross_cents: "",
+              deductions_cents: "",
+              status: "posted",
+            }
+          : {}),
+      };
+      if (key === "source_account_id" && state.entity === "recurrences") {
+        const picked = data.accounts.find((a) => a.id === value);
+        if (picked?.kind === "credit_card") {
+          const dueDay = clampDay(picked.due_day ?? 10, 10);
+          const ym = (v.start_date || today()).slice(0, 7);
+          const lastDay = new Date(
+            Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0, 12),
+          ).getUTCDate();
+          const d = String(Math.min(dueDay, lastDay)).padStart(2, "0");
+          next.start_date = `${ym}-${d}`;
+          if (!v.category || v.category === "Outros") {
+            next.category = "Assinaturas";
           }
-        : {}),
-    }));
+        }
+      }
+      return next;
+    });
   const field = (
     key: string,
     label: string,
@@ -301,13 +344,21 @@ export default function RecordForm({
   const expenseSourceAccounts = data.accounts.map((a) => [
     a.id,
     a.kind === "credit_card"
-      ? `💳 ${a.name}${a.institution ? ` (${a.institution})` : ""} · Cartão`
+      ? isCreditWalletAccount(a)
+        ? `🛍️ ${a.name}${a.institution ? ` (${a.institution})` : ""} · Carteira`
+        : `💳 ${a.name}${a.institution ? ` (${a.institution})` : ""} · Cartão`
       : a.name,
   ]);
   const selectedCreditCard =
     state.entity === "transactions" &&
     values.kind === "expense" &&
     !state.record
+      ? data.accounts.find(
+          (a) => a.id === values.source_account_id && a.kind === "credit_card",
+        )
+      : undefined;
+  const selectedRecurrenceCard =
+    state.entity === "recurrences" && values.kind === "expense"
       ? data.accounts.find(
           (a) => a.id === values.source_account_id && a.kind === "credit_card",
         )
@@ -362,10 +413,24 @@ export default function RecordForm({
               throw new Error(
                 "Informe o dia de fechamento da fatura (1 a 31).",
               );
-            const cleanInst = v.institution.trim();
-            const cleanName =
+            const rawInst = v.institution.trim();
+            const rawName =
               v.name.trim() ||
-              (cleanInst ? `Cartão ${cleanInst}` : "Cartão de crédito");
+              (rawInst
+                ? ccAccountFormat === "wallet"
+                  ? rawInst
+                  : `Cartão ${rawInst}`
+                : ccAccountFormat === "wallet"
+                  ? "Carteira de crédito"
+                  : "Cartão de crédito");
+            const cleanInst =
+              ccAccountFormat === "wallet" &&
+              !isCreditWalletAccount({ name: rawName, institution: rawInst })
+                ? rawInst
+                  ? `${rawInst} · Carteira`
+                  : "Carteira digital"
+                : rawInst;
+            const cleanName = rawName;
             payload = {
               name: cleanName,
               kind: "credit_card",
@@ -580,10 +645,16 @@ export default function RecordForm({
             <h2 id="form-title">
               {e === "accounts" && values.kind === "credit_card"
                 ? state.record
-                  ? "Editar cartão de crédito"
-                  : "Novo cartão de crédito"
+                  ? ccAccountFormat === "wallet"
+                    ? "Editar carteira de crédito"
+                    : "Editar cartão de crédito"
+                  : ccAccountFormat === "wallet"
+                    ? "Nova carteira de crédito"
+                    : "Novo cartão de crédito"
                 : selectedCreditCard
-                  ? "Nova compra no cartão"
+                  ? isCreditWalletAccount(selectedCreditCard)
+                    ? "Nova compra na carteira"
+                    : "Nova compra no cartão"
                   : `${
                       state.record
                         ? "Editar"
@@ -604,6 +675,32 @@ export default function RecordForm({
           </button>
         </div>
         <div className="dialog-fields">
+          {e === "accounts" && values.kind === "credit_card" && (
+            <div className="form-field">
+              <span>Modalidade do limite</span>
+              <div className="segmented">
+                <button
+                  type="button"
+                  className={ccAccountFormat === "card" ? "selected" : ""}
+                  onClick={() => setCcAccountFormat("card")}
+                >
+                  💳 Cartão de crédito
+                </button>
+                <button
+                  type="button"
+                  className={ccAccountFormat === "wallet" ? "selected" : ""}
+                  onClick={() => setCcAccountFormat("wallet")}
+                >
+                  🛍️ Carteira / Crédito de loja
+                </button>
+              </div>
+              <small>
+                {ccAccountFormat === "wallet"
+                  ? "Ideal para Shopee (SParcelado), Mercado Crédito, PicPay, MagaluPay ou carnês digitais."
+                  : "Cartão de crédito bancário tradicional com fechamento e vencimento mensal."}
+              </small>
+            </div>
+          )}
           {(e === "accounts" ||
             e === "goals" ||
             e === "investments" ||
@@ -611,7 +708,9 @@ export default function RecordForm({
             field(
               "name",
               e === "accounts" && values.kind === "credit_card"
-                ? "Nome ou apelido do cartão"
+                ? ccAccountFormat === "wallet"
+                  ? "Nome da carteira ou crédito digital"
+                  : "Nome ou apelido do cartão / carteira"
                 : "Nome",
               {
                 required:
@@ -626,7 +725,9 @@ export default function RecordForm({
                         : "Ex.: Reserva de emergência, Próxima viagem..."
                     : e === "accounts"
                       ? values.kind === "credit_card"
-                        ? "Ex.: Nubank Ultravioleta, Itaú Click, Cartão principal..."
+                        ? ccAccountFormat === "wallet"
+                          ? "Ex.: Shopee SParcelado, Mercado Crédito, Crediário Magalu, PicPay..."
+                          : "Ex.: Itaú Click, Nubank, Shopee SParcelado, Mercado Crédito..."
                         : "Ex.: Conta do dia a dia, Carteira, Reserva..."
                       : undefined,
               },
@@ -636,12 +737,24 @@ export default function RecordForm({
               {select("kind", "Tipo de conta", accountKinds)}
               {values.kind === "credit_card" ? (
                 <>
-                  {field("institution", "Banco ou instituição do cartão", {
-                    required: false,
-                    placeholder: "Ex.: Nubank, Itaú, Inter, Bradesco, C6...",
-                  })}
+                  {field(
+                    "institution",
+                    ccAccountFormat === "wallet"
+                      ? "Loja, app ou instituição da carteira"
+                      : "Banco, loja ou instituição do cartão",
+                    {
+                      required: false,
+                      placeholder:
+                        ccAccountFormat === "wallet"
+                          ? "Ex.: Shopee, Mercado Pago, PicPay, MagaluPay, Pagaleve, Shein..."
+                          : "Ex.: Itaú, Nubank, Shopee (SParcelado), Mercado Crédito, Inter...",
+                    },
+                  )}
                   <div className="cc-bank-chips">
-                    {popularCardBanks.map((bankName) => (
+                    {(ccAccountFormat === "wallet"
+                      ? popularCreditWallets
+                      : [...popularCardBanks, ...popularCreditWallets.slice(0, 4)]
+                    ).map((bankName) => (
                       <button
                         key={bankName}
                         type="button"
@@ -652,12 +765,21 @@ export default function RecordForm({
                             : ""
                         }`}
                         onClick={() => {
+                          const isWallet = isCreditWalletAccount({
+                            name: bankName,
+                            institution: bankName,
+                          });
+                          if (isWallet && ccAccountFormat !== "wallet") {
+                            setCcAccountFormat("wallet");
+                          }
                           setValues((old) => ({
                             ...old,
                             institution: bankName,
                             name: old.name.trim()
                               ? old.name
-                              : `Cartão ${bankName}`,
+                              : isWallet
+                                ? bankName
+                                : `Cartão ${bankName}`,
                           }));
                         }}
                       >
@@ -665,9 +787,18 @@ export default function RecordForm({
                       </button>
                     ))}
                   </div>
-                  {field("credit_limit_cents", "Limite total do cartão (R$)", {
-                    placeholder: "Ex.: 5.000,00",
-                  })}
+                  {field(
+                    "credit_limit_cents",
+                    ccAccountFormat === "wallet"
+                      ? "Limite total liberado na carteira (R$)"
+                      : "Limite total do cartão (R$)",
+                    {
+                      placeholder:
+                        ccAccountFormat === "wallet"
+                          ? "Ex.: 1.200,00"
+                          : "Ex.: 5.000,00",
+                    },
+                  )}
                   <div className="form-grid">
                     <label className="form-field">
                       <span>Dia de vencimento da fatura</span>
@@ -922,12 +1053,13 @@ export default function RecordForm({
               {["expense", "transfer"].includes(values.kind) &&
                 select(
                   "source_account_id",
-                  selectedCreditCard
+                  selectedCreditCard || selectedRecurrenceCard
                     ? "Cartão de crédito utilizado"
                     : values.kind === "expense"
                       ? "Conta ou cartão de origem"
                       : "Conta de origem",
-                  e === "transactions" && values.kind === "expense"
+                  (e === "transactions" || e === "recurrences") &&
+                    values.kind === "expense"
                     ? expenseSourceAccounts
                     : nonCreditAccounts,
                 )}
@@ -1101,6 +1233,12 @@ export default function RecordForm({
                             </button>
                           </div>
                         </div>
+                        <small className="muted">
+                          Compras no fim de semana ou próximas ao fechamento
+                          costumam cair na fatura seguinte — se o banco jogou
+                          para o próximo mês, use <strong>+1 mês</strong> (você
+                          também pode mover depois direto na fatura).
+                        </small>
                         <div className="cc-preview-grid">
                           <div>
                             <small className="muted">1º vencimento</small>
@@ -1327,6 +1465,19 @@ export default function RecordForm({
                     registro automático começa hoje; datas anteriores sempre
                     aguardam sua confirmação.
                   </p>
+                  {selectedRecurrenceCard && (
+                    <p className="info-box">
+                      <Info size={18} />
+                      <span>
+                        <strong>Assinatura no cartão {selectedRecurrenceCard.name}:</strong>{" "}
+                        será incluída automaticamente todo mês na fatura deste
+                        cartão (vencimento dia{" "}
+                        {clampDay(selectedRecurrenceCard.due_day ?? 10, 10)}),
+                        ficando segregada do saldo da conta até o pagamento da
+                        fatura.
+                      </span>
+                    </p>
+                  )}
                   {(() => {
                     const account = data.accounts.find(
                       (a) =>
@@ -1336,6 +1487,7 @@ export default function RecordForm({
                           : values.source_account_id),
                     );
                     return account &&
+                      account.kind !== "credit_card" &&
                       values.start_date < account.opening_date ? (
                       <p className="info-box">
                         <Info size={18} />

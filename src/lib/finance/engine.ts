@@ -146,7 +146,9 @@ export function overview(data: FinanceData, month: string, asOf: string) {
   );
   const creditCards = data.accounts
     .filter((a) => a.kind === "credit_card")
-    .map((c) => creditCardSummary(c, data.transactions, month, asOf));
+    .map((c) =>
+      creditCardSummary(c, data.transactions, month, asOf, data.recurrences),
+    );
   const creditCardLimit = sumCents(creditCards.map((c) => c.limitCents));
   const creditCardUsed = sumCents(creditCards.map((c) => c.usedCents));
   const creditCardAvailable = sumCents(

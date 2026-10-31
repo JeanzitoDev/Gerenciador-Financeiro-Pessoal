@@ -3438,8 +3438,9 @@ button.cc-installment-pill.active {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 9px 11px;
   border-radius: 10px;
   background: var(--panel-soft);
   border: 1px solid var(--line);
@@ -3447,8 +3448,9 @@ button.cc-installment-pill.active {
 .cc-invoice-desc {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
+  flex: 1 1 160px;
 }
 .cc-invoice-desc strong {
   font-size: 12px;
@@ -3465,9 +3467,82 @@ button.cc-installment-pill.active {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  margin-left: auto;
 }
 .cc-invoice-right strong {
   font-size: 12px;
+}
+.cc-shift-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cc-shift-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.cc-shift-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.cc-shift-btn.pay {
+  border-color: var(--green);
+  color: var(--green);
+  background: var(--green-soft);
+}
+.cc-shift-btn.pay:hover {
+  background: var(--green);
+  color: #ffffff;
+}
+.cc-paid-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.cc-preview-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 4px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  font-size: 11px;
+  color: var(--text);
+}
+.cc-preview-banner button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--accent);
+  background: var(--panel);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
 }
 .cc-upcoming-box {
   margin-top: 14px;
@@ -3475,6 +3550,12 @@ button.cc-installment-pill.active {
   border-top: 1px dashed var(--line);
   display: flex;
   flex-direction: column;
+  gap: 8px;
+}
+.cc-upcoming-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 .cc-pay-box {
@@ -3497,6 +3578,70 @@ button.cc-installment-pill.active {
   gap: 8px;
 }
 .cc-card-actions > .button {
-  flex: 1;
-  min-width: 150px;
+  flex: 1 1 210px;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  min-height: 40px;
+  padding: 9px 14px;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
+}
+@media (max-width: 600px) {
+  .cc-card-actions {
+    flex-direction: column;
+  }
+  .cc-card-actions > .button {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+}
+.signup-privacy-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+}
+.signup-consent-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text);
+  cursor: pointer;
+}
+.signup-consent-check input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  min-height: 17px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.signup-consent-check a {
+  color: var(--accent);
+  text-decoration: underline;
+  font-weight: 600;
+}
+.signup-privacy {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+.signup-privacy > svg {
+  color: var(--green);
+  flex-shrink: 0;
+  margin-top: 2px;
 }

@@ -1,5 +1,6 @@
 import { requireUser, json, errorResponse, databaseError } from "@/lib/api";
 import { normalizeAccountRow } from "@/lib/finance/credit-cards";
+import { deobfuscateRecordRow } from "@/lib/privacy-crypto";
 export const dynamic = "force-dynamic";
 export async function GET() {
   try {
@@ -29,7 +30,10 @@ export async function GET() {
         }
         return [
           table,
-          table === "accounts" ? all.map((r) => normalizeAccountRow(r)) : all,
+          (table === "accounts"
+            ? all.map((r) => normalizeAccountRow(r))
+            : all
+          ).map((r) => deobfuscateRecordRow(table, r, user.id)),
         ];
       }),
     );

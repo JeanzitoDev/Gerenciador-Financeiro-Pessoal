@@ -95,7 +95,9 @@ import PiggyBankBoard from "./piggy-bank-board";
 import { entryStatusLabel, isPaidEarly } from "@/lib/finance/entry-status";
 import { buildMonthlyReport } from "@/lib/finance/reports";
 import {
+  buildDateWithDay,
   creditCardSummary,
+  isCreditWalletAccount,
   parseCreditCardMeta,
 } from "@/lib/finance/credit-cards";
 type Screen =
@@ -254,7 +256,13 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
       cardId: string;
       payAccountId: string;
       busy: boolean;
-    } | null>(null);
+      entryId?: string;
+      entryDescription?: string;
+      entryAmountCents?: number;
+    } | null>(null),
+    [cardPreviewMonth, setCardPreviewMonth] = useState<Record<string, string>>(
+      {},
+    );
   const [loading, setLoading] = useState(!demo),
     [error, setError] = useState(""),
     [toast, setToast] = useState(""),
@@ -502,6 +510,34 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
     label: string,
     groupPrefix?: string,
   ) => setRemove({ entity, id: row.id, label, groupPrefix });
+  async function shiftCardEntry(
+    entry: Entry,
+    deltaMonths: number,
+    dueDay: number,
+    groupPrefix?: string,
+  ) {
+    try {
+      await save("transactions", "PUT", {
+        shift_cc_entry: {
+          id: entry.id,
+          group_prefix: groupPrefix,
+          delta_months: deltaMonths,
+          due_day: dueDay,
+        },
+      });
+      const targetMonth = addMonths(
+        `${entry.date.slice(0, 7)}-01`,
+        deltaMonths,
+      ).slice(0, 7);
+      setToast(`Compra movida para a fatura de ${monthLabel(targetMonth)}.`);
+    } catch (err) {
+      setToast(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível mover a compra de fatura.",
+      );
+    }
+  }
   const visibleEntries = useMemo(
     () =>
       data?.transactions
@@ -1717,7 +1753,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     <div className="section-head standalone">
                       <div>
                         <h2>
-                          Cartões de crédito
+                          Cartões e carteiras de crédito
                           <span className="count-badge">
                             {creditCards.length}
                           </span>
@@ -1727,28 +1763,78 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                           Fatura de {monthLabel(month)}.
                         </p>
                       </div>
-                      <button
-                        className="button secondary"
-                        onClick={() =>
-                          newRecord("accounts", { kind: "credit_card" })
-                        }
-                      >
-                        <Plus size={16} />
-                        Adicionar cartão
-                      </button>
+                      <div className="button-row">
+                        <button
+                          className="button secondary"
+                          onClick={() =>
+                            newRecord("accounts", {
+                              kind: "credit_card",
+                              cc_format: "wallet",
+                            })
+                          }
+                        >
+                          <Wallet size={16} />
+                          Adicionar carteira (Shopee/Loja)
+                        </button>
+                        <button
+                          className="button secondary"
+                          onClick={() =>
+                            newRecord("accounts", {
+                              kind: "credit_card",
+                              cc_format: "card",
+                            })
+                          }
+                        >
+                          <Plus size={16} />
+                          Adicionar cartão
+                        </button>
+                      </div>
                     </div>
 
                     {creditCards.length ? (
                       <div className="accounts-grid">
                         {creditCards.map((card) => {
-                          const cc = creditCardSummary(
+                          const isWallet = isCreditWalletAccount(card);
+                          const viewedMonth =
+                            cardPreviewMonth[card.id] || month;
+                          const isPreviewingOtherMonth = viewedMonth !== month;
+                          const ccBase = creditCardSummary(
                             card,
                             data.transactions,
                             month,
                             asOf,
+                            data.recurrences,
                           );
+                          const cc = isPreviewingOtherMonth
+                            ? creditCardSummary(
+                                card,
+                                data.transactions,
+                                viewedMonth,
+                                asOf,
+                                data.recurrences,
+                              )
+                            : ccBase;
                           const inv = cc.currentInvoice;
                           const isPaying = payingCard?.cardId === card.id;
+                          const closePreview = () =>
+                            setCardPreviewMonth((prev) => {
+                              const copy = { ...prev };
+                              delete copy[card.id];
+                              return copy;
+                            });
+                          const togglePreviewMonth = (targetMonth: string) => {
+                            if (
+                              targetMonth === month ||
+                              cardPreviewMonth[card.id] === targetMonth
+                            ) {
+                              closePreview();
+                            } else {
+                              setCardPreviewMonth((prev) => ({
+                                ...prev,
+                                [card.id]: targetMonth,
+                              }));
+                            }
+                          };
                           return (
                             <article
                               className="panel account-card credit-card-panel"
@@ -1756,7 +1842,11 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                             >
                               <div className="section-head">
                                 <span className="square-icon">
-                                  <CreditCard size={22} />
+                                  {isWallet ? (
+                                    <Wallet size={22} />
+                                  ) : (
+                                    <CreditCard size={22} />
+                                  )}
                                 </span>
                                 <Actions
                                   label={card.name}
@@ -1767,7 +1857,9 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                                 />
                               </div>
                               <p className="eyebrow">
-                                Cartão de crédito
+                                {isWallet
+                                  ? "Crédito Digital / Loja"
+                                  : "Cartão de crédito"}
                                 {card.institution
                                   ? ` · ${card.institution}`
                                   : ""}{" "}
@@ -1775,11 +1867,28 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                                 {cc.dueDay}
                               </p>
                               <h2>{card.name}</h2>
+                              {isPreviewingOtherMonth && (
+                                <div className="cc-preview-banner">
+                                  <span>
+                                    Visualizando fatura de{" "}
+                                    <strong>{monthLabel(viewedMonth)}</strong>
+                                  </span>
+                                  <button type="button" onClick={closePreview}>
+                                    ✕ Fechar (voltar p/{" "}
+                                    {
+                                      monthLabel(month)
+                                        .split(" ")[0]
+                                        .slice(0, 3)
+                                    }
+                                    /{month.slice(2, 4)})
+                                  </button>
+                                </div>
+                              )}
                               <div className="cc-invoice-header">
                                 <div>
                                   <small className="muted">
-                                    Fatura de {monthLabel(month)} (vence em{" "}
-                                    {formatDate(inv.dueDate)})
+                                    Fatura de {monthLabel(viewedMonth)} (vence
+                                    em {formatDate(inv.dueDate)})
                                   </small>
                                   <strong
                                     className={`account-balance ${inv.openCents > 0 ? "negative" : ""}`}
@@ -1822,7 +1931,13 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                                   aria-label={`Uso do limite de ${card.name}`}
                                 >
                                   <span
-                                    style={{ width: `${cc.usageRatio * 100}%` }}
+                                    style={{
+                                      width: `${
+                                        cc.usedCents > 0
+                                          ? Math.max(3, cc.usageRatio * 100)
+                                          : 0
+                                      }%`,
+                                    }}
                                   />
                                 </div>
                                 <div className="overdraft-metrics">
@@ -1850,8 +1965,9 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                               {inv.entries.length > 0 && (
                                 <div className="cc-invoice-list">
                                   <small className="muted">
-                                    Lançamentos na fatura de {monthLabel(month)}{" "}
-                                    ({inv.entries.length}):
+                                    Lançamentos na fatura de{" "}
+                                    {monthLabel(viewedMonth)} (
+                                    {inv.entries.length}):
                                   </small>
                                   {inv.entries.map((item) => {
                                     const meta = parseCreditCardMeta(
@@ -1860,6 +1976,11 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                                     const groupPrefix = meta
                                       ? `cc:${meta.groupId}:`
                                       : undefined;
+                                    const isVirtualRecurrence =
+                                      item.id.startsWith("virtual-rec-");
+                                    const canShift =
+                                      item.status === "planned" &&
+                                      !isVirtualRecurrence;
                                     return (
                                       <div
                                         className="cc-invoice-row"
@@ -1872,12 +1993,75 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                                             {meta?.purchaseDate
                                               ? ` · Compra em ${formatDate(meta.purchaseDate)}`
                                               : ""}
-                                            {meta && meta.totalInstallments > 1
-                                              ? ` · Parcela ${meta.installmentNumber}/${meta.totalInstallments}`
-                                              : " · À vista (1x)"}
+                                            {item.recurrence_id
+                                              ? " · Assinatura recorrente"
+                                              : meta &&
+                                                  meta.totalInstallments > 1
+                                                ? ` · Parcela ${meta.installmentNumber}/${meta.totalInstallments}`
+                                                : " · À vista (1x)"}
                                           </small>
                                         </div>
                                         <div className="cc-invoice-right">
+                                          {item.status === "posted" && (
+                                            <span className="cc-paid-pill">
+                                              ✓ Paga
+                                            </span>
+                                          )}
+                                          {canShift && (
+                                            <div className="cc-shift-actions">
+                                              <button
+                                                type="button"
+                                                className="cc-shift-btn pay"
+                                                title="Pagar ou antecipar somente esta compra/parcela"
+                                                onClick={() =>
+                                                  setPayingCard({
+                                                    cardId: card.id,
+                                                    payAccountId:
+                                                      liquidAccounts[0]?.id ??
+                                                      "",
+                                                    busy: false,
+                                                    entryId: item.id,
+                                                    entryDescription:
+                                                      item.description,
+                                                    entryAmountCents:
+                                                      item.amount_cents,
+                                                  })
+                                                }
+                                              >
+                                                ✓ Pagar
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="cc-shift-btn"
+                                                title="Voltar compra/parcelas para a fatura anterior (−1 mês)"
+                                                onClick={() =>
+                                                  void shiftCardEntry(
+                                                    item,
+                                                    -1,
+                                                    cc.dueDay,
+                                                    groupPrefix,
+                                                  )
+                                                }
+                                              >
+                                                −1 mês
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="cc-shift-btn"
+                                                title="Jogar compra/parcelas para a próxima fatura (+1 mês)"
+                                                onClick={() =>
+                                                  void shiftCardEntry(
+                                                    item,
+                                                    1,
+                                                    cc.dueDay,
+                                                    groupPrefix,
+                                                  )
+                                                }
+                                              >
+                                                +1 mês
+                                              </button>
+                                            </div>
+                                          )}
                                           <strong>
                                             {value(item.amount_cents)}
                                           </strong>
@@ -1886,15 +2070,22 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                                             className="icon-button"
                                             aria-label={`Excluir ${item.description}`}
                                             onClick={() =>
-                                              askDelete(
-                                                "transactions",
-                                                item,
-                                                meta &&
-                                                  meta.totalInstallments > 1
-                                                  ? `${item.description} (todas as parcelas desta compra)`
-                                                  : item.description,
-                                                groupPrefix,
-                                              )
+                                              isVirtualRecurrence &&
+                                              item.recurrence_id
+                                                ? askDelete(
+                                                    "recurrences",
+                                                    { id: item.recurrence_id },
+                                                    `${item.description} (assinatura recorrente)`,
+                                                  )
+                                                : askDelete(
+                                                    "transactions",
+                                                    item,
+                                                    meta &&
+                                                      meta.totalInstallments > 1
+                                                      ? `${item.description} (todas as parcelas desta compra)`
+                                                      : item.description,
+                                                    groupPrefix,
+                                                  )
                                             }
                                           >
                                             <Trash2 size={14} />
@@ -1906,34 +2097,77 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                                 </div>
                               )}
 
-                              {cc.upcomingInvoices.some(
+                              {(ccBase.upcomingInvoices.some(
                                 (m) => m.openCents > 0,
-                              ) && (
+                              ) ||
+                                isPreviewingOtherMonth) && (
                                 <div className="cc-upcoming-box">
-                                  <small className="muted">
-                                    Próximas faturas (toque para ver o mês):
-                                  </small>
+                                  <div className="cc-upcoming-head">
+                                    <small className="muted">
+                                      Próximas faturas (toque para abrir ou
+                                      fechar):
+                                    </small>
+                                    {isPreviewingOtherMonth && (
+                                      <button
+                                        type="button"
+                                        className="cc-shift-btn"
+                                        onClick={closePreview}
+                                      >
+                                        ✕ Fechar fatura
+                                      </button>
+                                    )}
+                                  </div>
                                   <div className="cc-upcoming-pills">
-                                    {cc.upcomingInvoices
+                                    {isPreviewingOtherMonth && (
+                                      <button
+                                        type="button"
+                                        className="cc-installment-pill"
+                                        onClick={closePreview}
+                                      >
+                                        <span>
+                                          {
+                                            monthLabel(month)
+                                              .split(" ")[0]
+                                              .slice(0, 3)
+                                          }
+                                          /{month.slice(2, 4)} (atual)
+                                        </span>
+                                        <strong>
+                                          {value(
+                                            ccBase.currentInvoice.openCents,
+                                          )}
+                                        </strong>
+                                      </button>
+                                    )}
+                                    {ccBase.upcomingInvoices
                                       .filter((m) => m.openCents > 0)
-                                      .map((m) => (
-                                        <button
-                                          key={m.month}
-                                          type="button"
-                                          className={`cc-installment-pill ${m.month === month ? "active" : ""}`}
-                                          onClick={() => setMonth(m.month)}
-                                        >
-                                          <span>
-                                            {
-                                              monthLabel(m.month)
-                                                .split(" ")[0]
-                                                .slice(0, 3)
+                                      .map((m) => {
+                                        const isActive =
+                                          m.month === viewedMonth;
+                                        return (
+                                          <button
+                                            key={m.month}
+                                            type="button"
+                                            className={`cc-installment-pill ${isActive ? "active" : ""}`}
+                                            onClick={() =>
+                                              togglePreviewMonth(m.month)
                                             }
-                                            /{m.month.slice(2, 4)}
-                                          </span>
-                                          <strong>{value(m.openCents)}</strong>
-                                        </button>
-                                      ))}
+                                          >
+                                            <span>
+                                              {
+                                                monthLabel(m.month)
+                                                  .split(" ")[0]
+                                                  .slice(0, 3)
+                                              }
+                                              /{m.month.slice(2, 4)}
+                                            </span>
+                                            <strong>
+                                              {value(m.openCents)}
+                                            </strong>
+                                            {isActive && <span>✕</span>}
+                                          </button>
+                                        );
+                                      })}
                                   </div>
                                 </div>
                               )}
@@ -1941,8 +2175,9 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                               {isPaying && inv.openCents > 0 && (
                                 <div className="cc-pay-box">
                                   <strong>
-                                    Pagar fatura de {monthLabel(month)} (
-                                    {value(inv.openCents)})
+                                    {payingCard.entryId
+                                      ? `Pagar / antecipar item: ${payingCard.entryDescription} (${value(payingCard.entryAmountCents ?? 0)})`
+                                      : `Pagar fatura de ${monthLabel(viewedMonth)} (${value(inv.openCents)})`}
                                   </strong>
                                   <div className="form-field">
                                     <span>
@@ -1961,7 +2196,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                                       options={[
                                         [
                                           "",
-                                          "Apenas liberar o limite do cartão (sem debitar conta)",
+                                          `Apenas liberar o limite ${isWallet ? "da carteira" : "do cartão"} (sem debitar conta)`,
                                         ],
                                         ...liquidAccounts.map(
                                           (a): [string, string] => [
@@ -1990,19 +2225,34 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                                           busy: true,
                                         });
                                         try {
-                                          const openIds = inv.entries
-                                            .filter(
-                                              (e) => e.status === "planned",
-                                            )
-                                            .map((e) => e.id);
+                                          const isSingleItem = Boolean(
+                                            payingCard.entryId,
+                                          );
+                                          const openIds = payingCard.entryId
+                                            ? [payingCard.entryId]
+                                            : inv.entries
+                                                .filter(
+                                                  (e) =>
+                                                    e.status === "planned" &&
+                                                    !e.id.startsWith(
+                                                      "virtual-rec-",
+                                                    ),
+                                                )
+                                                .map((e) => e.id);
+                                          const payAmount = payingCard.entryId
+                                            ? (payingCard.entryAmountCents ?? 0)
+                                            : inv.openCents;
+                                          const payDesc = payingCard.entryId
+                                            ? `Pagamento ${card.name} · ${payingCard.entryDescription}`
+                                            : `Pagamento fatura ${card.name} (${monthLabel(viewedMonth)})`;
                                           await save("transactions", "PUT", {
                                             batch_pay_ids: openIds,
                                             payment_entry:
                                               payingCard.payAccountId
                                                 ? {
                                                     kind: "expense",
-                                                    description: `Pagamento fatura ${card.name} (${monthLabel(month)})`,
-                                                    amount_cents: inv.openCents,
+                                                    description: payDesc,
+                                                    amount_cents: payAmount,
                                                     date: today(),
                                                     category:
                                                       "Fatura de cartão",
@@ -2017,7 +2267,9 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                                           });
                                           setPayingCard(null);
                                           setToast(
-                                            "Fatura marcada como paga e limite do cartão liberado!",
+                                            isSingleItem
+                                              ? `Parcela/compra paga e limite ${isWallet ? "da carteira" : "do cartão"} liberado!`
+                                              : `Fatura marcada como paga e limite ${isWallet ? "da carteira" : "do cartão"} liberado!`,
                                           );
                                         } catch (err) {
                                           setPayingCard({
@@ -2027,7 +2279,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                                           setToast(
                                             err instanceof Error
                                               ? err.message
-                                              : "Não foi possível pagar a fatura.",
+                                              : "Não foi possível registrar o pagamento.",
                                           );
                                         }
                                       }}
@@ -2051,7 +2303,26 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                                   }
                                 >
                                   <Plus size={16} />
-                                  Registrar compra no cartão
+                                  Registrar compra{" "}
+                                  {isWallet ? "na carteira" : "no cartão"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button ghost"
+                                  onClick={() =>
+                                    newRecord("recurrences", {
+                                      kind: "expense",
+                                      source_account_id: card.id,
+                                      category: "Assinaturas",
+                                      start_date: buildDateWithDay(
+                                        month,
+                                        cc.dueDay,
+                                      ),
+                                    })
+                                  }
+                                >
+                                  <RefreshCw size={15} />
+                                  Assinatura recorrente
                                 </button>
                                 {inv.openCents > 0 && !isPaying && (
                                   <button
@@ -3237,15 +3508,15 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   className="panel privacy-notice"
                   aria-label="Privacidade dos seus dados"
                 >
-                  <h2>Quem pode ver meus dados?</h2>
+                  <h2>Como seus dados são protegidos?</h2>
                   <p>
-                    Outros usuários não podem consultar seus registros pelas
-                    permissões do app. Como esta é uma versão beta (teste) sem
-                    criptografia de ponta a ponta, o administrador do projeto
-                    tem acesso técnico ao banco nesta fase.
+                    Seus registros contam com isolamento individual por conta
+                    (Row Level Security), conexões criptografadas (TLS/HTTPS) e
+                    ofuscação criptográfica dos nomes de contas, cartões, metas
+                    e descrições de lançamentos no banco de dados.
                   </p>
                   <Link className="text-button" href="/privacidade">
-                    Entender a privacidade dos dados <ArrowRight size={16} />
+                    Ver Aviso de Privacidade e LGPD <ArrowRight size={16} />
                   </Link>
                 </section>
                 <section className="panel">

@@ -25,7 +25,14 @@ import {
   buildCreditCardSchedule,
   creditCardSummary,
   formatCreditCardExternalId,
+  isCreditWalletAccount,
 } from "../src/lib/finance/credit-cards";
+import {
+  obfuscateText,
+  deobfuscateText,
+  obfuscateRecordPayload,
+  deobfuscateRecordRow,
+} from "../src/lib/privacy-crypto";
 import type { Account, Entry, FinanceData, Goal } from "../src/lib/types";
 const a: Account = {
   id: "a",
@@ -355,5 +362,71 @@ describe("metas e simulação", () => {
     expect(ov.creditCardUsed).toBe(60000);
     expect(ov.creditCardAvailable).toBe(440000);
     expect(ov.creditCardInvoice).toBe(20000);
+  });
+
+  it("identifica carteiras de crédito digital (Shopee SParcelado, Mercado Crédito) vs cartões bancários", () => {
+    expect(
+      isCreditWalletAccount({
+        name: "Shopee SParcelado",
+        institution: "Shopee (SParcelado)",
+      }),
+    ).toBe(true);
+    expect(
+      isCreditWalletAccount({
+        name: "Mercado Crédito",
+        institution: "Mercado Pago",
+      }),
+    ).toBe(true);
+    expect(
+      isCreditWalletAccount({
+        name: "Itaú Click",
+        institution: "Itaú",
+      }),
+    ).toBe(false);
+  });
+
+  it("ofusca e desofusca textos sensíveis respeitando isolamento por usuário e limites SQL", () => {
+    const userA = "11111111-1111-4111-8111-111111111111";
+    const userB = "22222222-2222-4222-8222-222222222222";
+
+    const cipher = obfuscateText("Supermercado Assaí · Compra do mês", userA, 140, true);
+    expect(cipher.startsWith("enc:")).toBe(true);
+    expect(cipher.length).toBeLessThanOrEqual(140);
+
+    // Desofuscação com a chave do mesmo usuário recupera o texto original
+    expect(deobfuscateText(cipher, userA)).toBe("Supermercado Assaí · Compra do mês");
+
+    // Outro usuário não consegue desofuscar o token (validação de tag HMAC)
+    expect(deobfuscateText(cipher, userB)).toBe(cipher);
+
+    // Textos legados em texto plano continuam funcionando normalmente
+    expect(deobfuscateText("Conta Corrente Itaú", userA)).toBe("Conta Corrente Itaú");
+
+    // Concatenação parcial gerada pela RPC pay_loan_installment é desofuscada preservando o sufixo
+    const loanNameCipher = obfuscateText("Empréstimo Carro", userA, 80, true);
+    expect(
+      deobfuscateText(`${loanNameCipher} · Parcela 3/24`, userA),
+    ).toBe("Empréstimo Carro · Parcela 3/24");
+
+    // Payload e Row round-trip respeitando o limite de 80 caracteres do PostgreSQL
+    const payload = obfuscateRecordPayload(
+      "accounts",
+      {
+        name: "Cartão Nubank Ultravioleta Principal da Família",
+        institution: "Nu Pagamentos S.A.",
+        balance_cents: 150000,
+      },
+      userA,
+      true,
+    );
+    expect(String(payload.name).startsWith("enc:")).toBe(true);
+    expect(String(payload.name).length).toBeLessThanOrEqual(80);
+    expect(String(payload.institution).startsWith("enc:")).toBe(true);
+    expect(String(payload.institution).length).toBeLessThanOrEqual(80);
+
+    const restored = deobfuscateRecordRow("accounts", payload, userA);
+    expect(restored.name).toBe("Cartão Nubank Ultravioleta Principal da Família");
+    expect(restored.institution).toBe("Nu Pagamentos S.A.");
+    expect(restored.balance_cents).toBe(150000);
   });
 });

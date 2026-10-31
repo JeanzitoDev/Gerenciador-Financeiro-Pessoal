@@ -4,7 +4,7 @@ import BrandMark from "@/components/brand-mark";
 import { APP_VERSION } from "@/lib/version";
 
 export const metadata: Metadata = {
-  title: "Privacidade dos dados · Meu Norte",
+  title: "Privacidade e Proteção de Dados (LGPD) · Meu Norte",
 };
 
 export default function Privacy() {
@@ -18,104 +18,132 @@ export default function Privacy() {
           Ir para meu espaço
         </Link>
       </header>
-      <h1>Seus dados, com clareza.</h1>
+      <h1>Seus dados, com clareza e proteção.</h1>
       <p>
-        Meu Norte · v{APP_VERSION} · versão beta (teste) · aviso atualizado em
-        28/10/2026.
+        Meu Norte · v{APP_VERSION} · Aviso de Privacidade e Proteção de Dados
+        (LGPD) atualizado em 31/10/2026.
       </p>
+
       <section className="panel privacy-notice">
-        <h2>Quem pode acessar? (Versão Beta · Teste)</h2>
+        <h2>1. Como protegemos a sua privacidade financeira</h2>
         <p>
-          As permissões do banco separam os registros de cada usuário. Uma conta
-          comum não pode consultar ou alterar os dados de outra conta.
+          O <strong>Meu Norte</strong> foi desenhado para que você organize sua
+          vida financeira com tranquilidade e sigilo. Adotamos três camadas de
+          proteção técnica sobre as informações cadastradas:
+        </p>
+        <p>
+          <strong>Isolamento por usuário (Row Level Security):</strong> cada
+          conta possui políticas restritivas diretamente no banco de dados. Um
+          usuário autenticado jamais consegue consultar, listar ou modificar
+          registros de outro usuário.
         </p>
         <p>
           <strong>
-            Importante: estas são versões betas (de teste) e não possuem
-            criptografia de ponta a ponta. O administrador do projeto tem acesso
-            técnico aos dados financeiros pelo banco.
+            Ofuscação criptográfica de descrições e nomes no banco:
           </strong>{" "}
-          Por estarmos em fase de testes e sem criptografia exclusiva por chave
-          do usuário, o responsável pelo projeto (JeanzitoDev) exime-se da
-          responsabilidade de afirmar que não possui acesso algum aos dados,
-          pois enquanto perdurar a fase beta esse acesso técnico ao banco de
-          dados existe de fato.
+          os textos identificadores da sua rotina — como nomes de contas,
+          cartões, carteiras digitais, metas, contratos e descrições dos seus
+          lançamentos — passam por{" "}
+          <strong>
+            criptografia de camada de aplicação (AES-256-CTR + HMAC)
+          </strong>{" "}
+          vinculada ao identificador único da sua conta antes de serem gravados.
+          Assim, mesmo em rotinas de manutenção técnica da infraestrutura, as
+          descrições permanecem embaralhadas (<code>enc:...</code>) nas tabelas
+          do banco de dados.
         </p>
         <p>
-          Se você está conhecendo o app e prefere não compartilhar informações
-          reais nesta fase de testes, use valores fictícios ou a{" "}
-          <Link href="/demo">demonstração</Link>.
-        </p>
-      </section>
-      <section className="panel">
-        <h2>Futuro lançamento como Produto e criptografia</h2>
-        <p>
-          Em uma eventual disponibilização ao público como{" "}
-          <strong>Produto oficial</strong>, será implementada{" "}
-          <strong>criptografia</strong> para que as informações sensíveis
-          estejam disponíveis <strong>somente ao próprio usuário</strong>, bem
-          como recursos completos de <strong>recuperação de senha</strong> e
-          gestão de acesso.
-        </p>
-        <p>
-          Nessa etapa com criptografia ativa, se eventualmente o usuário
-          solicitar algum <strong>relatório ou suporte</strong>, ou caso haja
-          necessidade de acesso vinculada a um{" "}
-          <strong>boletim de ocorrência (B.O.) ou solicitação judicial</strong>,
-          o responsável somente conseguirá acessar os dados caso essa
-          solicitação seja feita e utilizando uma{" "}
-          <strong>chave ou autorização de acesso</strong> específica para
-          destrancar as informações.
+          <strong>Separação de identidade nas tabelas financeiras:</strong> os
+          registros financeiros são vinculados apenas a um código técnico
+          aleatório (<code>UUID</code>), sem exibir seu nome ou endereço de
+          e-mail nas linhas de transações, metas ou saldos.
         </p>
       </section>
+
       <section className="panel">
-        <h2>O que fica guardado?</h2>
+        <h2>2. Tratamento de dados segundo a LGPD (Lei nº 13.709/2018)</h2>
         <p>
-          Seu nome, e-mail e preferências, além das contas, lançamentos,
-          recorrências, metas, aportes e contratos que você cadastrar. O app não
-          se conecta ao seu banco e não precisa da senha do seu banco.
+          Em conformidade com a{" "}
+          <strong>Lei Geral de Proteção de Dados Pessoais (LGPD)</strong>, o
+          tratamento dos dados informados no aplicativo ocorre exclusivamente
+          para a <strong>execução do serviço solicitado pelo titular</strong>{" "}
+          (Art. 7º, inciso V da LGPD), permitindo calcular saldos, projetar
+          faturas, simular metas e gerar relatórios para o próprio usuário.
         </p>
         <p>
-          A autenticação e o banco usam Supabase; a hospedagem usa Vercel. Para
-          servir o app, esses provedores também processam dados técnicos de
-          conexão e operação. O Supabase armazena um hash da senha de acesso
-          para verificá-la, em vez de guardá-la como texto legível.
-        </p>
-        <p>
-          As consultas de juros ao Banco Central pedem apenas séries públicas
-          predefinidas. Os valores da sua simulação e seus dados pessoais não
-          são enviados nessa consulta.
+          <strong>Compromisso de não comercialização:</strong> o Meu Norte não
+          vende, não aluga, não compartilha dados com birôs de crédito ou redes
+          de anúncios e não realiza perfilamento comportamental para oferta de
+          empréstimos ou produtos de terceiros.
         </p>
       </section>
+
       <section className="panel">
-        <h2>Quais são as proteções e os limites?</h2>
+        <h2>3. O que fica armazenado e infraestrutura</h2>
         <p>
-          O app utiliza sessão autenticada, permissões por usuário no banco e
-          validação de dados no servidor. A versão publicada deve usar HTTPS.
-          Nenhuma dessas medidas equivale a tornar os dados invisíveis ao
-          administrador ou a garantir ausência de falhas.
+          Armazenamos apenas o necessário para o funcionamento do seu espaço:
+          nome de exibição, e-mail de acesso, preferências visuais e os
+          registros que você decidir cadastrar (contas, cartões, lançamentos,
+          recorrências, metas e contratos). O app não pede senhas bancárias nem
+          movimenta valores reais.
         </p>
         <p>
-          A confirmação de endereço e a recuperação por e-mail estão adiadas
-          nesta fase. Criar uma conta não comprova a titularidade da caixa de
-          e-mail.
+          A autenticação e o banco de dados utilizam infraestrutura{" "}
+          <strong>Supabase</strong> com criptografia em trânsito (HTTPS/TLS) e
+          em repouso no disco (AES-256); a hospedagem web utiliza{" "}
+          <strong>Vercel</strong>. Sua senha de acesso nunca é salva em texto
+          aberto, sendo armazenada apenas como hash criptográfico.
+        </p>
+        <p>
+          As consultas de taxas médias ao Banco Central buscam apenas séries
+          estatísticas públicas predefinidas, sem enviar seus dados pessoais ou
+          valores simulados ao provedor externo.
         </p>
       </section>
+
       <section className="panel">
-        <h2>Como consultar ou excluir?</h2>
+        <h2>4. Política de Cookies (Diretrizes da ANPD)</h2>
         <p>
-          Você pode consultar seus registros no app, baixar os lançamentos em
-          CSV nos Relatórios e excluir a conta em menu da conta → Perfil e
-          preferências → Apagar minha conta. A exclusão remove o cadastro e os
-          registros financeiros vinculados do banco ativo.
+          Seguindo o Guia Orientativo de Cookies da{" "}
+          <strong>Autoridade Nacional de Proteção de Dados (ANPD)</strong>,
+          informamos que o Meu Norte utiliza{" "}
+          <strong>apenas cookies técnicos estritamente necessários</strong> para
+          manter sua sessão autenticada ativa com segurança e proteger suas
+          requisições contra falsificação.
         </p>
         <p>
-          Isso não apaga arquivos que você já exportou nem significa remoção
-          instantânea de todas as cópias de segurança e registros técnicos dos
-          provedores, que têm seus próprios prazos de retenção.
+          Não utilizamos cookies de publicidade, pixels de rastreamento de redes
+          sociais ou ferramentas invasivas de monitoramento entre sites.
+        </p>
+      </section>
+
+      <section className="panel">
+        <h2>5. Seus direitos como titular (Portabilidade e Exclusão)</h2>
+        <p>
+          Você possui controle direto e imediato sobre seus dados dentro do
+          próprio aplicativo, em atendimento ao Art. 18 da LGPD:
         </p>
         <p>
-          Responsável pelo projeto:{" "}
+          <strong>Acesso, correção e portabilidade:</strong> você pode editar ou
+          remover qualquer lançamento a qualquer momento e exportar todo o seu
+          histórico em formato aberto (<strong>Baixar CSV</strong> na aba
+          Relatórios).
+        </p>
+        <p>
+          <strong>Eliminação imediata e atômica:</strong> em{" "}
+          <em>Menu da conta → Preferências → Apagar minha conta e meus dados</em>
+          , você pode excluir definitivamente seu cadastro. A operação remove em
+          cascata todas as suas transações, contas, metas, contratos, perfil e
+          credenciais de acesso do banco de dados ativo mediante confirmação da
+          sua senha.
+        </p>
+        <p>
+          Caso prefira conhecer a ferramenta sem criar conta, utilize livremente
+          a <Link href="/demo">demonstração interativa</Link> com dados
+          fictícios.
+        </p>
+        <p>
+          Responsável técnico pelo projeto:{" "}
           <a
             href="https://github.com/JeanzitoDev"
             target="_blank"
@@ -123,9 +151,7 @@ export default function Privacy() {
           >
             JeanzitoDev
           </a>
-          . Para questões de privacidade, procure o responsável pelo canal em
-          que recebeu o convite para testar; evite publicar seus dados
-          financeiros em comentários públicos.
+          .
         </p>
       </section>
     </main>
