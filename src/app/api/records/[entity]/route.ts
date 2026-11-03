@@ -47,8 +47,16 @@ async function mutate(
       method === "POST" &&
       Array.isArray(body.batch_entries)
     ) {
-      if (body.batch_entries.length < 1 || body.batch_entries.length > 60)
-        throw new ApiError(422, "Quantidade de parcelas inválida.");
+      const isStatementImport = body.is_statement_import === true;
+      const maxBatch = isStatementImport ? 500 : 60;
+      if (body.batch_entries.length < 1 || body.batch_entries.length > maxBatch)
+        throw new ApiError(
+          422,
+          isStatementImport
+            ? "Selecione entre 1 e 500 lançamentos para importar por vez."
+            : "Quantidade de parcelas inválida.",
+        );
+      const minDateByAccount = new Map<string, string>();
       const rows = body.batch_entries.map((item: unknown) => {
         const parsedItem = schemas.transactions.safeParse(item);
         if (!parsedItem.success)
@@ -56,12 +64,43 @@ async function mutate(
             422,
             parsedItem.error.issues[0]?.message ?? "Revise os campos.",
           );
+        const d = parsedItem.data.date;
+        for (const accId of [
+          parsedItem.data.source_account_id,
+          parsedItem.data.target_account_id,
+        ]) {
+          if (accId) {
+            const cur = minDateByAccount.get(accId);
+            if (!cur || d < cur) minDateByAccount.set(accId, d);
+          }
+        }
         return obfuscateRecordPayload(
           "transactions",
-          { ...parsedItem.data, user_id: user.id },
+          {
+            ...parsedItem.data,
+            source: parsedItem.data.source ?? (isStatementImport ? "import" : "manual"),
+            user_id: user.id,
+          },
           user.id,
         );
       });
+      if (isStatementImport && minDateByAccount.size > 0) {
+        const { data: accRows } = await supabase
+          .from("accounts")
+          .select("id,opening_date")
+          .eq("user_id", user.id)
+          .in("id", [...minDateByAccount.keys()]);
+        for (const acc of accRows ?? []) {
+          const minDate = minDateByAccount.get(acc.id);
+          if (minDate && acc.opening_date && minDate < acc.opening_date) {
+            await supabase
+              .from("accounts")
+              .update({ opening_date: minDate })
+              .eq("id", acc.id)
+              .eq("user_id", user.id);
+          }
+        }
+      }
       const { data, error } = await supabase
         .from("transactions")
         .insert(rows)

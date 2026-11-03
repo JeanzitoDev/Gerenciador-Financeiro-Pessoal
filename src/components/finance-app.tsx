@@ -19,6 +19,7 @@ import {
   Pencil,
   Trash2,
   Download,
+  Upload,
   RefreshCw,
   ChevronRight,
   ChevronLeft,
@@ -77,6 +78,9 @@ import {
 } from "@/lib/finance/engine";
 import { exportEntries } from "@/lib/finance/csv";
 import RecordForm, { type FormState } from "./record-form";
+import StatementImportModal, {
+  STATEMENT_FILE_ACCEPT,
+} from "./statement-import-modal";
 import FinanceChart from "./charts";
 import Simulator from "./simulator";
 import GettingStarted from "./getting-started";
@@ -278,6 +282,21 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
     [deletingAccount, setDeletingAccount] = useState(false),
     [accountFilter, setAccountFilter] = useState("");
   const [savingOnboarding, setSavingOnboarding] = useState(false);
+  const [importModal, setImportModal] = useState<{
+    accountId?: string;
+    invoiceMonth?: string;
+    initialFile?: File | null;
+  } | null>(null);
+  const quickImportInputRef = useRef<HTMLInputElement>(null);
+  function openImportModal(
+    preset: { accountId?: string; invoiceMonth?: string } = {},
+    triggerFilePicker = true,
+  ) {
+    setImportModal(preset);
+    if (triggerFilePicker) {
+      quickImportInputRef.current?.click();
+    }
+  }
   const [reportHorizon, setReportHorizon] = useState<6 | 12>(6);
   const [reportAccount, setReportAccount] = useState("");
   const [reportTarget, setReportTarget] = useState<
@@ -371,6 +390,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
       if (
         document.visibilityState === "visible" &&
         !form &&
+        !importModal &&
         !remove &&
         !savingPrefs &&
         !savingOnboarding
@@ -383,7 +403,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
       clearInterval(timer);
       window.removeEventListener("focus", refresh);
     };
-  }, [demo, load, form, remove, savingPrefs, savingOnboarding]);
+  }, [demo, load, form, importModal, remove, savingPrefs, savingOnboarding]);
   useEffect(() => {
     const update = () => setOffline(!navigator.onLine);
     update();
@@ -1182,13 +1202,22 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                 screen,
               ) && <MonthControl value={month} onChange={setMonth} />}
               {screen === "overview" && (
-                <button
-                  className="button primary"
-                  onClick={() => newRecord("transactions")}
-                >
-                  <Plus size={17} />
-                  Novo lançamento
-                </button>
+                <>
+                  <button
+                    className="button secondary"
+                    onClick={() => openImportModal({ invoiceMonth: month })}
+                  >
+                    <Upload size={16} />
+                    Importar extrato / fatura
+                  </button>
+                  <button
+                    className="button primary"
+                    onClick={() => newRecord("transactions")}
+                  >
+                    <Plus size={17} />
+                    Novo lançamento
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -1208,6 +1237,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                 hasAccounts={data.accounts.length > 0}
                 onStep={(step) => void setOnboarding(step)}
                 onDismiss={() => void setOnboarding(onboardingStep, true)}
+                onImport={() => openImportModal({ invoiceMonth: month })}
                 onAction={() => {
                   const step = onboardingStep;
                   if (step === 0) {
@@ -1490,7 +1520,21 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     <ArrowRight size={15} />
                   </button>
                 </div>
-                {entryList(monthlyEntries.slice(0, 5), true)}
+                {entryList(
+                  [...monthlyEntries]
+                    .sort(
+                      (a, b) =>
+                        (a.status === "posted" ? 0 : 1) -
+                          (b.status === "posted" ? 0 : 1) ||
+                        b.date.localeCompare(a.date) ||
+                        (b.created_at ?? "").localeCompare(
+                          a.created_at ?? "",
+                        ) ||
+                        b.id.localeCompare(a.id),
+                    )
+                    .slice(0, 5),
+                  true,
+                )}
               </section>
             </>
           )}
@@ -1514,13 +1558,27 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     </button>
                   ))}
                 </div>
-                <button
-                  className="button primary"
-                  onClick={() => newRecord("transactions")}
-                >
-                  <Plus size={17} />
-                  Novo lançamento
-                </button>
+                <div className="button-row">
+                  <button
+                    className="button secondary"
+                    onClick={() =>
+                      openImportModal({
+                        accountId: accountFilter || undefined,
+                        invoiceMonth: month,
+                      })
+                    }
+                  >
+                    <Upload size={16} />
+                    Importar extrato / fatura
+                  </button>
+                  <button
+                    className="button primary"
+                    onClick={() => newRecord("transactions")}
+                  >
+                    <Plus size={17} />
+                    Novo lançamento
+                  </button>
+                </div>
               </div>
               <PendingRecurrences
                 entries={pending}
@@ -1715,26 +1773,43 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                                   )}
                                 </div>
                               )}
-                              <button
-                                className="text-button"
-                                onClick={() =>
-                                  newRecord(
-                                    "transactions",
-                                    a.kind === "investment"
-                                      ? {
-                                          kind: "transfer",
-                                          target_account_id: a.id,
-                                        }
-                                      : {
-                                          kind: "expense",
-                                          source_account_id: a.id,
-                                        },
-                                  )
-                                }
-                              >
-                                Registrar movimento
-                                <ArrowRight size={16} />
-                              </button>
+                              <div className="account-card-actions">
+                                <button
+                                  className="text-button"
+                                  onClick={() =>
+                                    newRecord(
+                                      "transactions",
+                                      a.kind === "investment"
+                                        ? {
+                                            kind: "transfer",
+                                            target_account_id: a.id,
+                                          }
+                                        : {
+                                            kind: "expense",
+                                            source_account_id: a.id,
+                                          },
+                                    )
+                                  }
+                                >
+                                  Registrar movimento
+                                  <ArrowRight size={16} />
+                                </button>
+                                {a.kind !== "investment" && (
+                                  <button
+                                    type="button"
+                                    className="text-button"
+                                    onClick={() =>
+                                      openImportModal({
+                                        accountId: a.id,
+                                        invoiceMonth: month,
+                                      })
+                                    }
+                                  >
+                                    <Upload size={15} />
+                                    Importar extrato
+                                  </button>
+                                )}
+                              </div>
                             </article>
                           );
                         })}
@@ -2305,6 +2380,19 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                                   <Plus size={16} />
                                   Registrar compra{" "}
                                   {isWallet ? "na carteira" : "no cartão"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button ghost"
+                                  onClick={() =>
+                                    openImportModal({
+                                      accountId: card.id,
+                                      invoiceMonth: viewedMonth,
+                                    })
+                                  }
+                                >
+                                  <Upload size={15} />
+                                  Importar fatura
                                 </button>
                                 <button
                                   type="button"
@@ -3645,6 +3733,34 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
           data={data}
           onClose={() => setForm(null)}
           onSubmit={save}
+        />
+      )}
+      <input
+        ref={quickImportInputRef}
+        type="file"
+        accept={STATEMENT_FILE_ACCEPT}
+        aria-label="Escolher arquivo de extrato ou fatura do dispositivo"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const picked = e.target.files?.[0];
+          if (picked) {
+            setImportModal((prev) => ({
+              ...(prev ?? { invoiceMonth: month }),
+              initialFile: picked,
+            }));
+          }
+          e.target.value = "";
+        }}
+      />
+      {importModal && (
+        <StatementImportModal
+          data={data}
+          initialAccountId={importModal.accountId}
+          initialMonth={importModal.invoiceMonth ?? month}
+          initialFile={importModal.initialFile}
+          onClose={() => setImportModal(null)}
+          onSubmit={save}
+          onSuccess={(msg) => setToast(msg)}
         />
       )}
       {remove && (

@@ -33,6 +33,12 @@ import {
   obfuscateRecordPayload,
   deobfuscateRecordRow,
 } from "../src/lib/privacy-crypto";
+import {
+  buildImportBatchPayload,
+  extractTextFromPdfBuffer,
+  parseStatementInput,
+  prepareImportPreview,
+} from "../src/lib/finance/statement-import";
 import type { Account, Entry, FinanceData, Goal } from "../src/lib/types";
 const a: Account = {
   id: "a",
@@ -428,5 +434,152 @@ describe("metas e simulação", () => {
     expect(restored.name).toBe("Cartão Nubank Ultravioleta Principal da Família");
     expect(restored.institution).toBe("Nu Pagamentos S.A.");
     expect(restored.balance_cents).toBe(150000);
+  });
+
+  it("interpreta extratos OFX, CSV e texto colado, categoriza automaticamente e evita duplicidade manual (v3.0.0)", async () => {
+    const bankAcc: Account = {
+      id: "11111111-1111-4111-8111-000000000010",
+      user_id: "u",
+      name: "Conta Itaú",
+      kind: "checking",
+      opening_cents: 100000,
+      opening_date: "2026-01-01",
+    };
+    const cardAcc: Account = {
+      id: "11111111-1111-4111-8111-000000000015",
+      user_id: "u",
+      name: "Nubank",
+      kind: "credit_card",
+      institution: "Nubank",
+      opening_cents: 0,
+      opening_date: "2026-01-01",
+      credit_limit_cents: 500000,
+      closing_day: 8,
+      due_day: 15,
+    };
+
+    // 1. OFX parsing
+    const ofxSample = `
+      <OFX>
+        <BANKMSGSRSV1>
+          <STMTTRN>
+            <TRNTYPE>DEBIT
+            <DTPOSTED>20261012100000[-3:BRT]
+            <TRNAMT>-42.90
+            <FITID>20261012001
+            <MEMO>PIX ENVIADO - IFOOD *RESTAURANTE
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>CREDIT
+            <DTPOSTED>20261005100000[-3:BRT]
+            <TRNAMT>4200.00
+            <FITID>20261005001
+            <MEMO>SALARIO LIQUIDO EMPRESA
+          </STMTTRN>
+        </BANKMSGSRSV1>
+      </OFX>
+    `;
+    const existingManualSalary = entry({
+      id: "manual-sal",
+      kind: "income",
+      description: "Salário do mês",
+      amount_cents: 420000,
+      date: "2026-10-05",
+      target_account_id: bankAcc.id,
+      source_account_id: null,
+      category: "Salário",
+    });
+
+    const ofxPreview = prepareImportPreview({
+      rawText: ofxSample,
+      fileName: "extrato.ofx",
+      targetAccount: bankAcc,
+      existingEntries: [existingManualSalary],
+    });
+    expect(ofxPreview.format).toBe("ofx");
+    expect(ofxPreview.items).toHaveLength(2);
+    // iFood -> Novo, Alimentação, selecionado
+    expect(ofxPreview.items[0].description).toBe("IFOOD *RESTAURANTE");
+    expect(ofxPreview.items[0].category).toBe("Alimentação");
+    expect(ofxPreview.items[0].duplicateStatus).toBe("new");
+    expect(ofxPreview.items[0].selected).toBe(true);
+    // Salário -> coincide com lançamento manual de mesmo valor/data -> desmarcado por padrão!
+    expect(ofxPreview.items[1].duplicateStatus).toBe("manual_match");
+    expect(ofxPreview.items[1].selected).toBe(false);
+    expect(ofxPreview.items[1].matchedEntry?.id).toBe("manual-sal");
+
+    // 2. Credit card CSV with installments and invoice payment filtering
+    const ccCsv = [
+      "date,category,title,amount",
+      "2026-10-04,compras,Shopee *Kit Cozinha 01/03,89.90",
+      "2026-10-06,serviços,Netflix.com,55.90",
+      "2026-10-08,pagamento,Pagamento recebido,-350.00",
+    ].join("\n");
+
+    const ccPreview = prepareImportPreview({
+      rawText: ccCsv,
+      fileName: "fatura-nubank.csv",
+      targetAccount: cardAcc,
+      invoiceMonth: "2026-10",
+      existingEntries: [],
+    });
+    expect(ccPreview.items).toHaveLength(3);
+    expect(ccPreview.items[0].description).toBe("Shopee *Kit Cozinha (1/3)");
+    expect(ccPreview.items[0].installmentNumber).toBe(1);
+    expect(ccPreview.items[0].totalInstallments).toBe(3);
+    expect(ccPreview.items[0].category).toBe("Compras");
+    expect(ccPreview.items[0].selected).toBe(true);
+    expect(ccPreview.items[1].category).toBe("Assinaturas");
+    expect(ccPreview.items[1].selected).toBe(true);
+    expect(ccPreview.items[2].duplicateStatus).toBe("invoice_payment");
+    expect(ccPreview.items[2].selected).toBe(false);
+
+    // 3. Batch payload projects remaining installments (2/3 and 3/3)
+    const batch = buildImportBatchPayload({
+      items: ccPreview.items,
+      targetAccount: cardAcc,
+      invoiceStatus: "planned",
+      projectFutureInstallments: true,
+    });
+    // 1/3 + 2/3 + 3/3 + Netflix = 4 entries
+    expect(batch).toHaveLength(4);
+    expect(batch.map((b) => b.description)).toEqual([
+      "Shopee *Kit Cozinha (1/3)",
+      "Shopee *Kit Cozinha (2/3)",
+      "Shopee *Kit Cozinha (3/3)",
+      "Netflix.com",
+    ]);
+    expect(batch.map((b) => b.date)).toEqual([
+      "2026-10-15",
+      "2026-11-15",
+      "2026-12-15",
+      "2026-10-15",
+    ]);
+
+    // 4. Plain text copied from PDF invoice (including DD MMM format)
+    const pdfLines = [
+      "12/10 UBER *TRIP R$ 24,90",
+      "14 OUT DROGASIL 1234 R$ 62,50",
+    ].join("\n");
+    const parsedPdf = parseStatementInput(pdfLines, {
+      referenceMonth: "2026-10",
+      isCreditCardTarget: true,
+    });
+    expect(parsedPdf.rows).toHaveLength(2);
+    expect(parsedPdf.rows[0].amountCents).toBe(2490);
+    expect(parsedPdf.rows[1].amountCents).toBe(6250);
+    expect(parsedPdf.rows[1].date).toBe("2026-10-14");
+
+    // 5. Native PDF text stream extraction
+    const mockPdfStream = `%PDF-1.4\n1 0 obj\n<< /Length 64 >>\nstream\nBT (15/10 IFOOD *REST R$ 49,90) Tj T* (18/10 NETFLIX.COM R$ 55,90) Tj ET\nendstream\nendobj`;
+    const pdfBuffer = new TextEncoder().encode(mockPdfStream).buffer;
+    const extracted = await extractTextFromPdfBuffer(pdfBuffer);
+    const parsedFromPdfBuffer = parseStatementInput(extracted, {
+      referenceMonth: "2026-10",
+      isCreditCardTarget: true,
+    });
+    expect(parsedFromPdfBuffer.rows).toHaveLength(2);
+    expect(parsedFromPdfBuffer.rows[0].amountCents).toBe(4990);
+    expect(parsedFromPdfBuffer.rows[1].amountCents).toBe(5590);
   });
 });

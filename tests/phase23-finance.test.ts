@@ -307,7 +307,9 @@ describe("fase 2.3.2 — aluguel de imóvel e cofrinho progressivo", () => {
       r6.current.fixedExpense + r6.current.variableExpense,
     ).toBe(r6.current.expense);
     expect(r6.topExpenses.length).toBeGreaterThan(0);
-    expect(r6.accountSummaries.length).toBe(d.accounts.length);
+    expect(r6.accountSummaries.length).toBe(
+      d.accounts.filter((a) => a.kind !== "credit_card").length,
+    );
 
     const r12 = buildMonthlyReport(d, currentMonth, today(), {
       horizon: 12,
@@ -338,6 +340,7 @@ describe("fase 2.3.2 — aluguel de imóvel e cofrinho progressivo", () => {
     ).toBe(false);
 
     let d = demoData();
+    const initialOverdraftUsed = overview(d, today().slice(0, 7), today()).overdraftUsed;
     d = mutateDemo(d, "accounts", "POST", {
       name: "Conta Cheque Especial",
       kind: "checking",
@@ -353,6 +356,7 @@ describe("fase 2.3.2 — aluguel de imóvel e cofrinho progressivo", () => {
         usedCents: 0,
         remainingCents: 100000,
         exceededCents: 0,
+        effectiveBalanceCents: 30000,
         totalAvailableCents: 130000,
         usageRatio: 0,
       },
@@ -377,11 +381,12 @@ describe("fase 2.3.2 — aluguel de imóvel e cofrinho progressivo", () => {
       usedCents: 50000,
       remainingCents: 50000,
       exceededCents: 0,
+      effectiveBalanceCents: 50000,
       totalAvailableCents: 50000,
       usageRatio: 0.5,
     });
     const ov = overview(d, today().slice(0, 7), today());
-    expect(ov.overdraftUsed).toBe(50000);
+    expect(ov.overdraftUsed).toBe(initialOverdraftUsed + 50000);
 
     // Despesa que ultrapassa o limite restante de R$ 500,00 deve ser bloqueada
     expect(() =>

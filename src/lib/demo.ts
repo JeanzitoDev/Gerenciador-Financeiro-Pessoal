@@ -638,15 +638,33 @@ export function mutateDemo(
     method === "POST" &&
     Array.isArray(payload.batch_entries)
   ) {
-    if (payload.batch_entries.length < 1 || payload.batch_entries.length > 60)
-      throw new Error("Quantidade de parcelas inválida.");
+    const isStatementImport = payload.is_statement_import === true;
+    const maxBatch = isStatementImport ? 500 : 60;
+    if (payload.batch_entries.length < 1 || payload.batch_entries.length > maxBatch)
+      throw new Error(
+        isStatementImport
+          ? "Selecione entre 1 e 500 lançamentos para importar por vez."
+          : "Quantidade de parcelas inválida.",
+      );
     for (const item of payload.batch_entries) {
       const parsedItem = schemas.transactions.safeParse(item);
       if (!parsedItem.success)
         throw new Error(parsedItem.error.issues[0].message);
+      if (isStatementImport) {
+        for (const accId of [
+          parsedItem.data.source_account_id,
+          parsedItem.data.target_account_id,
+        ]) {
+          if (!accId) continue;
+          const acc = next.accounts.find((a) => a.id === accId);
+          if (acc && parsedItem.data.date < acc.opening_date) {
+            acc.opening_date = parsedItem.data.date;
+          }
+        }
+      }
       next.transactions.push({
         created_at: new Date().toISOString(),
-        source: "manual",
+        source: parsedItem.data.source ?? (isStatementImport ? "import" : "manual"),
         external_id: null,
         import_batch_id: null,
         categorization_rule_id: null,

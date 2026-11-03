@@ -50,18 +50,45 @@ export default function useCalendarPosition(
           rightEdge - width,
         ),
       );
+      const isDropdown = preferredMaxHeight < Number.POSITIVE_INFINITY;
+      let clipTop = 16;
+      let clipBottom = window.innerHeight - 16;
+      if (typeof window.getComputedStyle === "function") {
+        let parent = anchor.current.parentElement;
+        while (parent && parent !== dialog && parent !== document.body) {
+          const { overflowY } = window.getComputedStyle(parent);
+          if (
+            overflowY === "auto" ||
+            overflowY === "scroll" ||
+            overflowY === "hidden"
+          ) {
+            const parentRect = parent.getBoundingClientRect();
+            if (parentRect.height > 0) {
+              clipTop = Math.max(clipTop, parentRect.top + 6);
+              clipBottom = Math.min(clipBottom, parentRect.bottom - 6);
+            }
+          }
+          parent = parent.parentElement;
+        }
+      }
       const topEdge = Math.max(
-        16,
+        clipTop,
         dialog?.querySelector(".dialog-head")?.getBoundingClientRect().bottom ??
           bounds?.top ??
           16,
         (nested?.top ?? 0) + 16,
       );
       const bottomEdge = Math.min(
-        window.innerHeight - 16,
-        dialog?.querySelector(".dialog-foot")?.getBoundingClientRect().top ??
-          bounds?.bottom ??
-          window.innerHeight - 16,
+        clipBottom,
+        isDropdown
+          ? bounds?.bottom
+            ? bounds.bottom - 12
+            : window.innerHeight - 16
+          : (dialog
+              ?.querySelector(".dialog-foot")
+              ?.getBoundingClientRect().top ??
+              bounds?.bottom ??
+              window.innerHeight - 16),
         (nested?.bottom ?? window.innerHeight) - 16,
       );
       const below = Math.max(0, bottomEdge - rect.bottom - 8);
@@ -70,7 +97,10 @@ export default function useCalendarPosition(
         popup.current.scrollHeight || 320,
         preferredMaxHeight,
       );
-      const useAbove = below < neededHeight && above > below;
+      const minDownwardHeight = isDropdown
+        ? Math.min(neededHeight, 140)
+        : neededHeight;
+      const useAbove = below < minDownwardHeight && above > below;
       const bestSide = useAbove ? above : below;
       if (
         preferredMaxHeight === Number.POSITIVE_INFINITY &&

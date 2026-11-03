@@ -633,9 +633,6 @@ export default function RecordForm({
         event.preventDefault();
         if (!busy) onClose();
       }}
-      onClick={(event) => {
-        if (event.target === event.currentTarget && !busy) onClose();
-      }}
       aria-labelledby="form-title"
     >
       <form onSubmit={submit}>
@@ -701,21 +698,12 @@ export default function RecordForm({
               </small>
             </div>
           )}
-          {(e === "accounts" ||
-            e === "goals" ||
-            e === "investments" ||
-            e === "loans") &&
+          {(e === "goals" || e === "investments" || e === "loans") &&
             field(
               "name",
-              e === "accounts" && values.kind === "credit_card"
-                ? ccAccountFormat === "wallet"
-                  ? "Nome da carteira ou crédito digital"
-                  : "Nome ou apelido do cartão / carteira"
-                : "Nome",
+              "Nome",
               {
-                required:
-                  (e !== "goals" || goalModel === "free") &&
-                  !(e === "accounts" && values.kind === "credit_card"),
+                required: e !== "goals" || goalModel === "free",
                 placeholder:
                   e === "goals"
                     ? goalModel === "piggy"
@@ -723,33 +711,60 @@ export default function RecordForm({
                       : goalModel === "progressive"
                         ? "Ex.: Cofrinho de 12 meses, Reserva de fim de ano..."
                         : "Ex.: Reserva de emergência, Próxima viagem..."
-                    : e === "accounts"
-                      ? values.kind === "credit_card"
-                        ? ccAccountFormat === "wallet"
-                          ? "Ex.: Shopee SParcelado, Mercado Crédito, Crediário Magalu, PicPay..."
-                          : "Ex.: Itaú Click, Nubank, Shopee SParcelado, Mercado Crédito..."
-                        : "Ex.: Conta do dia a dia, Carteira, Reserva..."
-                      : undefined,
+                    : undefined,
               },
             )}
           {e === "accounts" && (
             <>
-              {select("kind", "Tipo de conta", accountKinds)}
+              <div className="form-grid">
+                {field(
+                  "name",
+                  values.kind === "credit_card"
+                    ? ccAccountFormat === "wallet"
+                      ? "Nome da carteira ou crédito digital"
+                      : "Nome ou apelido do cartão / carteira"
+                    : "Nome",
+                  {
+                    required: values.kind !== "credit_card",
+                    placeholder:
+                      values.kind === "credit_card"
+                        ? ccAccountFormat === "wallet"
+                          ? "Ex.: Shopee SParcelado, Mercado Crédito, Crediário Magalu, PicPay..."
+                          : "Ex.: Itaú Click, Nubank, Shopee SParcelado, Mercado Crédito..."
+                        : "Ex.: Conta do dia a dia, Carteira, Reserva...",
+                  },
+                )}
+                {select("kind", "Tipo de conta", accountKinds)}
+              </div>
               {values.kind === "credit_card" ? (
                 <>
-                  {field(
-                    "institution",
-                    ccAccountFormat === "wallet"
-                      ? "Loja, app ou instituição da carteira"
-                      : "Banco, loja ou instituição do cartão",
-                    {
-                      required: false,
-                      placeholder:
-                        ccAccountFormat === "wallet"
-                          ? "Ex.: Shopee, Mercado Pago, PicPay, MagaluPay, Pagaleve, Shein..."
-                          : "Ex.: Itaú, Nubank, Shopee (SParcelado), Mercado Crédito, Inter...",
-                    },
-                  )}
+                  <div className="form-grid">
+                    {field(
+                      "institution",
+                      ccAccountFormat === "wallet"
+                        ? "Loja, app ou instituição da carteira"
+                        : "Banco, loja ou instituição do cartão",
+                      {
+                        required: false,
+                        placeholder:
+                          ccAccountFormat === "wallet"
+                            ? "Ex.: Shopee, Mercado Pago, PicPay, MagaluPay, Pagaleve, Shein..."
+                            : "Ex.: Itaú, Nubank, Shopee (SParcelado), Mercado Crédito, Inter...",
+                      },
+                    )}
+                    {field(
+                      "credit_limit_cents",
+                      ccAccountFormat === "wallet"
+                        ? "Limite total liberado na carteira (R$)"
+                        : "Limite total do cartão (R$)",
+                      {
+                        placeholder:
+                          ccAccountFormat === "wallet"
+                            ? "Ex.: 1.200,00"
+                            : "Ex.: 5.000,00",
+                      },
+                    )}
+                  </div>
                   <div className="cc-bank-chips">
                     {(ccAccountFormat === "wallet"
                       ? popularCreditWallets
@@ -787,18 +802,6 @@ export default function RecordForm({
                       </button>
                     ))}
                   </div>
-                  {field(
-                    "credit_limit_cents",
-                    ccAccountFormat === "wallet"
-                      ? "Limite total liberado na carteira (R$)"
-                      : "Limite total do cartão (R$)",
-                    {
-                      placeholder:
-                        ccAccountFormat === "wallet"
-                          ? "Ex.: 1.200,00"
-                          : "Ex.: 5.000,00",
-                    },
-                  )}
                   <div className="form-grid">
                     <label className="form-field">
                       <span>Dia de vencimento da fatura</span>
@@ -1039,32 +1042,41 @@ export default function RecordForm({
           )}
           {(e === "transactions" || e === "recurrences") && (
             <>
-              {!state.preset?.lock_credit_card &&
-                select(
-                  "kind",
-                  "Tipo",
-                  e === "recurrences" ? kinds.slice(0, 2) : kinds,
+              <div className={state.preset?.lock_credit_card ? undefined : "form-grid"}>
+                {!state.preset?.lock_credit_card &&
+                  select(
+                    "kind",
+                    "Tipo",
+                    e === "recurrences" ? kinds.slice(0, 2) : kinds,
+                  )}
+                {field(
+                  "description",
+                  selectedCreditCard ? "Descrição da compra" : "Descrição",
+                  {
+                    placeholder: selectedCreditCard
+                      ? "Ex.: Supermercado, Geladeira, Passagem aérea..."
+                      : undefined,
+                  },
                 )}
-              {field("description", selectedCreditCard ? "Descrição da compra" : "Descrição", {
-                placeholder: selectedCreditCard
-                  ? "Ex.: Supermercado, Geladeira, Passagem aérea..."
-                  : undefined,
-              })}
-              {["expense", "transfer"].includes(values.kind) &&
-                select(
-                  "source_account_id",
-                  selectedCreditCard || selectedRecurrenceCard
-                    ? "Cartão de crédito utilizado"
-                    : values.kind === "expense"
-                      ? "Conta ou cartão de origem"
-                      : "Conta de origem",
-                  (e === "transactions" || e === "recurrences") &&
-                    values.kind === "expense"
-                    ? expenseSourceAccounts
-                    : nonCreditAccounts,
-                )}
+              </div>
               {selectedCreditCard ? (
                 <>
+                  <div className="form-grid">
+                    {["expense", "transfer"].includes(values.kind) &&
+                      select(
+                        "source_account_id",
+                        "Cartão de crédito utilizado",
+                        (e === "transactions" || e === "recurrences") &&
+                          values.kind === "expense"
+                          ? expenseSourceAccounts
+                          : nonCreditAccounts,
+                      )}
+                    <CategoryInput
+                      value={values.category}
+                      onChange={(v) => update("category", v)}
+                      entries={data.transactions}
+                    />
+                  </div>
                   <div className="account-sign-row">
                     <span className="muted">Modalidade da compra:</span>
                     <div className="segmented compact">
@@ -1132,11 +1144,6 @@ export default function RecordForm({
                       </label>
                     </div>
                   )}
-                  <CategoryInput
-                    value={values.category}
-                    onChange={(v) => update("category", v)}
-                    entries={data.transactions}
-                  />
                   {(() => {
                     const dueDay = clampDay(selectedCreditCard.due_day ?? 10, 10);
                     const closingDay = clampDay(
@@ -1308,85 +1315,113 @@ export default function RecordForm({
               ) : (
                 <>
                   <div className="form-grid">
-                    {field(
-                      "amount_cents",
-                      values.kind === "yield"
-                        ? "Rendimento em R$ (aceita perda)"
-                        : "Valor líquido (R$)",
-                    )}
+                    {["expense", "transfer"].includes(values.kind) &&
+                      select(
+                        "source_account_id",
+                        selectedRecurrenceCard
+                          ? "Cartão de crédito utilizado"
+                          : values.kind === "expense"
+                            ? "Conta ou cartão de origem"
+                            : "Conta de origem",
+                        (e === "transactions" || e === "recurrences") &&
+                          values.kind === "expense"
+                          ? expenseSourceAccounts
+                          : nonCreditAccounts,
+                      )}
+                    {values.kind !== "expense" &&
+                      select(
+                        "target_account_id",
+                        "Conta de destino",
+                        values.kind === "yield"
+                          ? data.accounts
+                              .filter((a) => a.kind === "investment")
+                              .map((a) => [a.id, a.name])
+                          : nonCreditAccounts,
+                      )}
+                    {values.kind !== "transfer" &&
+                      field(
+                        "amount_cents",
+                        values.kind === "yield"
+                          ? "Rendimento em R$ (aceita perda)"
+                          : "Valor líquido (R$)",
+                      )}
+                  </div>
+                  <div className="form-grid">
+                    {values.kind === "transfer" &&
+                      field("amount_cents", "Valor líquido (R$)")}
                     {e === "recurrences" &&
                       field("start_date", "Primeira ocorrência", {
                         type: "date",
                       })}
+                    <CategoryInput
+                      value={values.category}
+                      onChange={(v) => update("category", v)}
+                      entries={data.transactions}
+                    />
+                    {e === "transactions" &&
+                      values.kind === "income" &&
+                      !state.record?.recurrence_id &&
+                      field("date", "Data", {
+                        type: "date",
+                        max: today(),
+                      })}
                   </div>
-                  {values.kind !== "expense" &&
-                    select(
-                      "target_account_id",
-                      "Conta de destino",
-                      values.kind === "yield"
-                        ? data.accounts
-                            .filter((a) => a.kind === "investment")
-                            .map((a) => [a.id, a.name])
-                        : nonCreditAccounts,
-                    )}
-                  <CategoryInput
-                    value={values.category}
-                    onChange={(v) => update("category", v)}
-                    entries={data.transactions}
-                  />
                   {e === "transactions" && (
                     <>
                       {(values.kind !== "income" ||
                         !!state.record?.recurrence_id) && (
-                        <div className="form-field">
-                          <span>Situação</span>
-                          <SelectControl
-                            label="Situação"
-                            value={values.status}
-                            onChange={(v) =>
-                              setValues((old) => ({
-                                ...old,
-                                status: v,
-                                date: v === "posted" ? today() : old.date,
-                              }))
-                            }
-                            options={[
-                              [
-                                "posted",
-                                values.kind === "expense"
-                                  ? "Já paguei"
-                                  : values.kind === "income"
-                                    ? "Já recebi"
-                                    : "Realizado",
-                              ],
-                              [
-                                "planned",
-                                values.kind === "expense"
-                                  ? "A pagar"
-                                  : values.kind === "income"
-                                    ? "A receber"
-                                    : "Agendado",
-                              ],
-                            ]}
-                          />
+                        <div className="form-grid">
+                          <div className="form-field">
+                            <span>Situação</span>
+                            <SelectControl
+                              label="Situação"
+                              value={values.status}
+                              onChange={(v) =>
+                                setValues((old) => ({
+                                  ...old,
+                                  status: v,
+                                  date: v === "posted" ? today() : old.date,
+                                }))
+                              }
+                              options={[
+                                [
+                                  "posted",
+                                  values.kind === "expense"
+                                    ? "Já paguei"
+                                    : values.kind === "income"
+                                      ? "Já recebi"
+                                      : "Realizado",
+                                ],
+                                [
+                                  "planned",
+                                  values.kind === "expense"
+                                    ? "A pagar"
+                                    : values.kind === "income"
+                                      ? "A receber"
+                                      : "Agendado",
+                                ],
+                              ]}
+                            />
+                          </div>
+                          {field(
+                            "date",
+                            values.kind === "expense" &&
+                              values.status === "planned"
+                              ? "Data de vencimento"
+                              : values.kind === "expense"
+                                ? "Data do pagamento"
+                                : "Data",
+                            {
+                              type: "date",
+                              max:
+                                values.status === "posted" ||
+                                (values.kind === "income" &&
+                                  !state.record?.recurrence_id)
+                                  ? today()
+                                  : undefined,
+                            },
+                          )}
                         </div>
-                      )}
-                      {field(
-                        "date",
-                        values.kind === "expense" && values.status === "planned"
-                          ? "Data de vencimento"
-                          : values.kind === "expense"
-                            ? "Data do pagamento"
-                            : "Data",
-                        {
-                          type: "date",
-                          max:
-                            values.status === "posted" ||
-                            (values.kind === "income" &&
-                              !state.record?.recurrence_id)
-                              ? today()
-                              : undefined,
-                        },
                       )}
                       {values.status === "posted" &&
                         state.record?.occurrence_date && (
@@ -1445,20 +1480,22 @@ export default function RecordForm({
                       required: false,
                     })}
                   </div>
-                  {select("active", "Estado", [
-                    ["true", "Ativa"],
-                    ["false", "Pausada"],
-                  ])}
-                  <label className="checkbox-field">
-                    <input
-                      type="checkbox"
-                      checked={values.auto_post === "true"}
-                      onChange={(e) =>
-                        update("auto_post", String(e.target.checked))
-                      }
-                    />
-                    <span>Registrar automaticamente na data</span>
-                  </label>
+                  <div className="form-grid">
+                    {select("active", "Estado", [
+                      ["true", "Ativa"],
+                      ["false", "Pausada"],
+                    ])}
+                    <label className="checkbox-field" style={{ alignSelf: "end" }}>
+                      <input
+                        type="checkbox"
+                        checked={values.auto_post === "true"}
+                        onChange={(e) =>
+                          update("auto_post", String(e.target.checked))
+                        }
+                      />
+                      <span>Registrar automaticamente na data</span>
+                    </label>
+                  </div>
                   <p className="form-help">
                     Sem essa opção, o item aparecerá em “Para confirmar”, nos
                     Lançamentos. Você recebe, paga ou pula o mês com um toque. O
@@ -1752,11 +1789,22 @@ export default function RecordForm({
           )}
           {e === "contributions" && (
             <>
-              {select(
-                "goal_id",
-                "Meta",
-                data.goals.map((g) => [g.id, g.name]),
-              )}
+              <div className="form-grid">
+                {select(
+                  "goal_id",
+                  "Meta",
+                  data.goals.map((g) => [g.id, g.name]),
+                )}
+                {select(
+                  "account_id",
+                  "Conta com o recurso",
+                  data.accounts
+                    .filter(
+                      (a) => a.kind !== "benefit" && a.kind !== "credit_card",
+                    )
+                    .map((a) => [a.id, a.name]),
+                )}
+              </div>
               {(() => {
                 const goal = data.goals.find((g) => g.id === values.goal_id);
                 const blockers = goal
@@ -1769,15 +1817,6 @@ export default function RecordForm({
                   </p>
                 ) : null;
               })()}
-              {select(
-                "account_id",
-                "Conta com o recurso",
-                data.accounts
-                  .filter(
-                    (a) => a.kind !== "benefit" && a.kind !== "credit_card",
-                  )
-                  .map((a) => [a.id, a.name]),
-              )}
               <div className="form-grid">
                 {field("amount_cents", "Reservar (R$)")}
                 {field("date", "Data", { type: "date", max: today() })}
@@ -1848,13 +1887,15 @@ export default function RecordForm({
           )}
           {e === "loans" && (
             <>
-              {select("kind", "Tipo de contrato", [
-                ["loan", "Empréstimo"],
-                ["financing", "Financiamento"],
-              ])}
-              {field("institution", "Banco ou instituição (opcional)", {
-                required: false,
-              })}
+              <div className="form-grid">
+                {select("kind", "Tipo de contrato", [
+                  ["loan", "Empréstimo"],
+                  ["financing", "Financiamento"],
+                ])}
+                {field("institution", "Banco ou instituição (opcional)", {
+                  required: false,
+                })}
+              </div>
               <div className="form-grid">
                 {field("principal_cents", "Valor financiado (R$), opcional", {
                   required: false,
@@ -1873,11 +1914,21 @@ export default function RecordForm({
                   max: values.total_installments,
                 })}
               </div>
-              {field(
-                "first_due_date",
-                "Vencimento da primeira parcela do contrato",
-                { type: "date" },
-              )}
+              <div className="form-grid">
+                {field(
+                  "first_due_date",
+                  "Vencimento da primeira parcela do contrato",
+                  { type: "date" },
+                )}
+                {select(
+                  "account_id",
+                  "Conta sugerida para pagar",
+                  data.accounts
+                    .filter((a) => ["checking", "cash"].includes(a.kind))
+                    .map((a) => [a.id, a.name]),
+                  false,
+                )}
+              </div>
               <div className="form-grid">
                 {field("monthly_rate", "Juros mensais (%), opcional", {
                   required: false,
@@ -1886,14 +1937,6 @@ export default function RecordForm({
                   required: false,
                 })}
               </div>
-              {select(
-                "account_id",
-                "Conta sugerida para pagar",
-                data.accounts
-                  .filter((a) => ["checking", "cash"].includes(a.kind))
-                  .map((a) => [a.id, a.name]),
-                false,
-              )}
               <p className="form-help">
                 O histórico já pago não cria despesas antigas. Cada novo
                 pagamento entra uma vez nos Lançamentos. Juros mensais e CET são

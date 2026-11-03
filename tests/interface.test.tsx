@@ -757,7 +757,9 @@ describe("fase 2.2 — rotina e consistência", () => {
     const first = dialog.getByLabelText("Primeira ocorrência");
     await user.clear(first);
     await user.type(first, future.split("-").reverse().join(""));
-    await user.click(dialog.getByRole("combobox", { name: "Conta de origem" }));
+    await user.click(
+      dialog.getByRole("combobox", { name: /Conta.*de origem/i }),
+    );
     await user.click(
       dialog.getByRole("option", { name: "Conta do dia a dia" }),
     );
@@ -852,10 +854,16 @@ describe("contratos pela interface", () => {
     await user.click(within(d).getByRole("button", { name: "Salvar" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByText("0 de 12 parcelas pagas")).toBeTruthy();
-    await user.click(screen.getByText("Registrar pagamento da parcela"));
-    await user.click(
-      screen.getByRole("button", { name: "Paguei esta parcela" }),
+    const contractCard = within(
+      screen.getByText("Contrato de teste").closest("section, article, div")! as HTMLElement,
     );
+    await user.click(
+      screen.getAllByText("Registrar pagamento da parcela").at(-1)!,
+    );
+    await user.click(
+      screen.getAllByRole("button", { name: "Paguei esta parcela" }).at(-1)!,
+    );
+    expect(contractCard).toBeTruthy();
     await waitFor(() =>
       expect(screen.getByText("1 de 12 parcelas pagas")).toBeTruthy(),
     );
@@ -885,6 +893,7 @@ describe("fase 2.3 — primeiros passos e decisões", () => {
     await user.type(screen.getByLabelText("Como podemos te chamar?"), "Jean");
     await user.type(screen.getByLabelText("E-mail"), "jean@example.com");
     await user.type(screen.getByLabelText("Senha"), "12345678");
+    await user.click(screen.getByRole("checkbox"));
     await user.click(screen.getByRole("button", { name: "Criar minha conta" }));
     await screen.findByRole("alert");
     await user.click(screen.getByRole("button", { name: "Ir para entrar" }));
@@ -1272,7 +1281,7 @@ describe("fase 2.3.1 — caminhos de uso", () => {
     expect(
       screen.getByRole("region", { name: "Privacidade dos seus dados" })
         .textContent,
-    ).toContain("administrador do projeto");
+    ).toContain("ofuscação criptográfica");
   });
 
   it("revisa e salva uma reserva pelo planejamento e desconta o valor do plano", async () => {
@@ -1337,27 +1346,33 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
     );
     await user.click(dialog.getByRole("button", { name: "Salvar" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    await user.click(screen.getByRole("button", { name: "Marcados" }));
+    const newGoalCard = within(
+      screen
+        .getAllByRole("button", { name: "Marcados" })
+        .at(-1)!
+        .closest("article, section, .panel")! as HTMLElement,
+    );
+    await user.click(newGoalCard.getByRole("button", { name: "Marcados" }));
     expect(
-      screen.getByText(/Nenhum número marcado nesta faixa ainda/),
+      newGoalCard.getByText(/Nenhum número marcado nesta faixa ainda/),
     ).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Todos" }));
+    await user.click(newGoalCard.getByRole("button", { name: "Todos" }));
     await user.click(
-      screen.getByRole("button", { name: "R$ 10 (disponível)" }),
+      newGoalCard.getByRole("button", { name: "R$ 10 (disponível)" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "R$ 20 (disponível)" }),
+      newGoalCard.getByRole("button", { name: "R$ 20 (disponível)" }),
     );
     await user.click(
-      screen.getByRole("button", { name: /Marcar no cofrinho/ }),
+      newGoalCard.getByRole("button", { name: /Marcar no cofrinho/ }),
     );
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "R$ 10 (já guardado)" }),
+        newGoalCard.getByRole("button", { name: "R$ 10 (já guardado)" }),
       ).toBeTruthy(),
     );
     expect(
-      screen.getByRole("button", { name: "R$ 20 (já guardado)" }),
+      newGoalCard.getByRole("button", { name: "R$ 20 (já guardado)" }),
     ).toBeTruthy();
   });
 
@@ -1482,5 +1497,82 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
     expect(card.textContent).toContain(
       "Novas entradas compensam o limite até a conta chegar no zero novamente.",
     );
+  });
+
+  it("permite importar extrato bancário ou fatura abrindo o explorador de arquivos / galeria e exibe a opção no tutorial (v3.0.0)", async () => {
+    const user = userEvent.setup();
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click");
+    render(<FinanceApp demo />);
+
+    // Ao clicar em "Importar extrato / fatura", deve acionar imediatamente o input de arquivo nativo (PC: explorador de arquivos; Celular: Fotos ou Arquivos) e abrir o modal com showModal()
+    const importButtons = screen.getAllByRole("button", {
+      name: /Importar extrato \/ fatura/i,
+    });
+    await user.click(importButtons[0]);
+    expect(clickSpy).toHaveBeenCalled();
+
+    const quickFileInput = screen.getByLabelText(
+      "Escolher arquivo de extrato ou fatura do dispositivo",
+    ) as HTMLInputElement;
+    expect(quickFileInput.accept).toContain("image/*");
+    expect(quickFileInput.accept).toContain("application/pdf");
+    expect(quickFileInput.accept).toContain(".ofx");
+    expect(quickFileInput.accept).toContain(".csv");
+
+    const dialogEl = screen.getByRole("dialog", {
+      name: "Importar extrato ou fatura",
+    }) as HTMLDialogElement;
+    expect(dialogEl.open).toBe(true);
+    expect(dialogEl.className).toContain("record-dialog");
+
+    const dialog = within(dialogEl);
+    await user.click(
+      dialog.getByRole("button", { name: /Carregar exemplo de teste/i }),
+    );
+    expect(dialogEl.className).toContain("has-preview");
+    expect(dialog.getByText(/5 selecionados para importar/i)).toBeTruthy();
+    expect(
+      dialog.getByText(/1 possível duplicata manual desmarcada/i),
+    ).toBeTruthy();
+
+    // Verifica que as listas suspensas da prévia usam o SelectControl padrão (role="combobox"), abrem para baixo sem cortar e que clicar fora não fecha o modal
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        if (this.classList.contains("select-control"))
+          return new DOMRect(420, 480, 180, 36);
+        if (this.tagName === "DIALOG") return new DOMRect(120, 60, 960, 650);
+        if (this.classList.contains("dialog-head"))
+          return new DOMRect(120, 60, 960, 68);
+        if (this.classList.contains("dialog-foot"))
+          return new DOMRect(120, 642, 960, 68);
+        return new DOMRect();
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(420);
+    const catCombo = dialog.getByRole("combobox", {
+      name: /Categoria de IFOOD \*IFOOD/i,
+    });
+    expect(catCombo.textContent).toContain("Alimentação");
+    await user.click(catCombo);
+    const listbox = dialog.getByRole("listbox", {
+      name: /Categoria de IFOOD \*IFOOD/i,
+    });
+    expect(listbox.style.top).toBe("calc(100% + 8px)");
+    expect(listbox.style.bottom).toBe("auto");
+    await user.keyboard("{Escape}");
+    fireEvent.click(dialogEl);
+    expect(dialogEl.open).toBe(true);
+
+    await user.click(
+      dialog.getByRole("button", { name: /Importar 5 lançamentos/i }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Importar extrato ou fatura" }),
+      ).toBeNull(),
+    );
+    expect(
+      screen.getByText(/5 lançamentos importados com sucesso!/i),
+    ).toBeTruthy();
   });
 });

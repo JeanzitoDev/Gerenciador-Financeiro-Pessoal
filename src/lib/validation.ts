@@ -105,6 +105,7 @@ export const transactionSchema = z
     gross_cents: cents.nonnegative().nullable().default(null),
     deductions_cents: cents.nonnegative().nullable().default(null),
     external_id: z.string().trim().max(120).nullable().optional(),
+    source: z.enum(["manual", "recurrence", "import"]).optional(),
   })
   .superRefine((v, ctx) => {
     if (v.kind !== "yield" && v.amount_cents <= 0)

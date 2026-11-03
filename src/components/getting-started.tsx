@@ -1,15 +1,15 @@
 "use client";
-import { ArrowRight, Check, Compass, X } from "lucide-react";
+import { ArrowRight, Check, Compass, Upload, X } from "lucide-react";
 const steps = [
   {
     title: "Comece pelo dinheiro que você tem",
-    text: "Cadastre sua conta do banco, carteira ou dinheiro guardado. Informe o saldo e a data desse saldo; os próximos movimentos vão atualizá-lo.",
+    text: "Cadastre sua conta do banco, cartão, carteira ou dinheiro guardado. Informe o saldo inicial; depois você poderá lançar manualmente ou importar seu extrato direto do banco.",
     action: "Cadastrar uma conta",
     done: "Já cadastrei minhas contas",
   },
   {
     title: "Conte o que se repete",
-    text: "Adicione seu salário líquido, aluguel e outras receitas ou despesas recorrentes. Em Lançamentos, você confirma o que recebeu ou pagou.",
+    text: "Adicione seu salário líquido, aluguel, assinaturas e outras receitas ou despesas recorrentes. Em Lançamentos, você confirma o que recebeu ou pagou.",
     action: "Adicionar recorrência",
     done: "Continuar",
   },
@@ -21,7 +21,7 @@ const steps = [
   },
   {
     title: "Pronto para cuidar do dia a dia",
-    text: "Em Lançamentos, registre o que entrou e saiu. Em Para confirmar, confira as recorrências. Depois, crie metas e use Cabe no meu bolso? para planejar sua próxima conquista.",
+    text: "Não quer digitar tudo manualmente? Importe o extrato do banco ou a fatura do cartão (.OFX, .CSV, .PDF ou foto) para o app identificar, categorizar e organizar tudo sozinho — ou cadastre manualmente em Lançamentos.",
     action: "Conhecer os lançamentos",
     done: "Concluir primeiros passos",
   },
@@ -31,6 +31,7 @@ export default function GettingStarted({
   busy,
   hasAccounts,
   onAction,
+  onImport,
   onStep,
   onDismiss,
 }: {
@@ -38,6 +39,7 @@ export default function GettingStarted({
   busy: boolean;
   hasAccounts: boolean;
   onAction: () => void;
+  onImport?: () => void;
   onStep: (step: number) => void;
   onDismiss: () => void;
 }) {
@@ -77,6 +79,17 @@ export default function GettingStarted({
           {current.action}
           <ArrowRight size={16} />
         </button>
+        {onImport && (
+          <button
+            type="button"
+            className="button secondary"
+            disabled={busy}
+            onClick={onImport}
+          >
+            <Upload size={16} />
+            Importar extrato / fatura
+          </button>
+        )}
         <button
           className="button secondary"
           disabled={busy || (step === 0 && !hasAccounts)}
@@ -86,6 +99,11 @@ export default function GettingStarted({
           {busy ? "Salvando…" : current.done}
         </button>
       </div>
+      <p className="small-note">
+        Prefere não inserir manualmente? Clique em{" "}
+        <strong>Importar extrato / fatura</strong> para anexar o arquivo ou
+        print do seu banco e organizar seus gastos automaticamente.
+      </p>
       {!hasAccounts && step > 0 && (
         <p className="small-note">
           Cadastre uma conta em Minhas contas para vincular seus movimentos.

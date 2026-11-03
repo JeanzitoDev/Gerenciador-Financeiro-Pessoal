@@ -282,13 +282,25 @@ button:focus:not(:focus-visible) {
   margin: auto;
   height: fit-content;
   padding: 0;
-  width: min(570px, calc(100vw - 32px));
-  max-width: 570px;
-  max-height: calc(100dvh - 40px);
+  width: min(820px, calc(100vw - 48px));
+  max-width: min(820px, calc(100vw - 48px));
+  max-height: calc(100dvh - 32px);
   overflow-x: visible;
   overflow-y: auto;
-  border-radius: 26px;
+  border-radius: 24px;
   overscroll-behavior: contain;
+}
+.record-dialog.confirm-dialog {
+  width: min(460px, calc(100vw - 32px));
+  max-width: min(460px, calc(100vw - 32px));
+}
+.record-dialog.statement-import-modal {
+  width: min(920px, calc(100vw - 48px));
+  max-width: min(920px, calc(100vw - 48px));
+}
+.record-dialog.statement-import-modal.has-preview {
+  width: min(1140px, calc(100vw - 40px));
+  max-width: min(1140px, calc(100vw - 40px));
 }
 .record-dialog[open] {
   animation: dialog-arrive 0.42s var(--ease-spring) both;
@@ -304,16 +316,16 @@ button:focus:not(:focus-visible) {
   z-index: 3;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
-  padding: 24px;
+  padding: 16px 24px;
 }
 .dialog-head h2 {
   font-family: var(--font-sans);
   font-weight: 650;
-  font-size: 24px;
+  font-size: 21px;
 }
 .dialog-fields {
-  padding: 24px;
-  gap: 18px;
+  padding: 18px 24px;
+  gap: 14px;
 }
 .dialog-foot {
   position: sticky;
@@ -321,7 +333,7 @@ button:focus:not(:focus-visible) {
   background: var(--panel);
   border-top: 1px solid var(--line);
   z-index: 3;
-  padding: 18px 24px;
+  padding: 14px 24px;
 }
 .form-field {
   min-width: 0;
@@ -376,6 +388,12 @@ input[type="radio"] {
 .category-input {
   position: relative;
   min-width: 0;
+}
+.select-control:focus-within,
+.select-control:has(.select-options),
+.date-control:focus-within,
+.date-control:has(.calendar-popover) {
+  z-index: 40;
 }
 .select-trigger {
   width: 100%;
@@ -1348,10 +1366,13 @@ input[type="radio"] {
   .page-heading-actions {
     justify-content: flex-start;
   }
-  .record-dialog {
+  .record-dialog,
+  .record-dialog.statement-import-modal,
+  .record-dialog.statement-import-modal.has-preview {
     width: calc(100vw - 20px);
-    max-height: calc(100dvh - 32px);
-    border-radius: 24px;
+    max-width: calc(100vw - 20px);
+    max-height: calc(100dvh - 24px);
+    border-radius: 22px;
   }
   .dialog-head {
     padding: 20px;
