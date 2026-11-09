@@ -27,7 +27,12 @@ async function mutate(
     if (!isEntity(entity)) throw new ApiError(404, "Recurso não encontrado.");
     const { supabase, user } = await requireUser();
     await consumeBudget(supabase);
-    const body = await readJson(request);
+    // Only authorized transaction POSTs may use the larger bounded payload
+    // needed by statement imports. All other routes retain the 12 KB cap.
+    const body = await readJson(
+      request,
+      entity === "transactions" && method === "POST" ? 200_000 : 12_000,
+    );
     if (
       entity === "transactions" &&
       method === "DELETE" &&
@@ -85,19 +90,19 @@ async function mutate(
         );
       });
       if (isStatementImport && minDateByAccount.size > 0) {
-        const { data: accRows } = await supabase
+        // Never move the account opening date without reconciling its
+        // opening balance. Doing so would double-count historical flows.
+        const { data: accRows, error: accountsError } = await supabase
           .from("accounts")
           .select("id,opening_date")
           .eq("user_id", user.id)
           .in("id", [...minDateByAccount.keys()]);
+        if (accountsError) throw databaseError(accountsError);
         for (const acc of accRows ?? []) {
           const minDate = minDateByAccount.get(acc.id);
           if (minDate && acc.opening_date && minDate < acc.opening_date) {
-            await supabase
-              .from("accounts")
-              .update({ opening_date: minDate })
-              .eq("id", acc.id)
-              .eq("user_id", user.id);
+            throw new ApiError(422,
+              "Há lançamentos anteriores à abertura de uma conta. Revise manualmente a data e o saldo inicial dessa conta antes de importar.");
           }
         }
       }

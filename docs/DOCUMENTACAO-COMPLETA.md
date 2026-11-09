@@ -1,4 +1,6 @@
-# Documentação Técnica e Funcional Completa — Meu Norte (`v3.0.2`)
+# Documentação Técnica e Funcional Completa — Meu Norte (`v3.0.3`)
+
+> **Fase 3.0.3:** este documento descreve majoritariamente a arquitetura da base 3.0.2. As correções incrementais de importação, sua implementação, verificações e limitações estão registradas em [FASE-3.0.3.md](FASE-3.0.3.md). O comportamento vigente deve ser confirmado no código.
 
 > **Propósito deste documento:** servir como referência única e completa de engenharia, produto, regras de negócio, banco de dados e segurança do **Meu Norte (`Gerenciador-Financeiro-Pessoal`)**. Qualquer pessoa desenvolvedora, analista ou auditora que assumir o código encontrará aqui o funcionamento integral do sistema de ponta a ponta.
 
@@ -152,7 +154,7 @@ Gerenciador-Financeiro-Pessoal/
 │   │   └── sw-register.tsx                # Registro seguro do Service Worker no cliente
 │   └── lib/                               # Núcleo de domínio, utilitários e integrações
 │       ├── types.ts                       # Tipagens TypeScript de todas as entidades do sistema
-│       ├── version.ts                     # Constante central de versão (APP_VERSION = "3.0.2")
+│       ├── version.ts                     # Constante central de versão (APP_VERSION = "3.0.3")
 │       ├── validation.ts                  # Schemas Zod de todas as entidades e payloads de API
 │       ├── origin.ts                      # Proteção CSRF/Origin e leitura de body com limite de bytes
 │       ├── db-compat.ts                   # Fallback automático para colunas opcionais no banco

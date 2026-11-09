@@ -1,15 +1,19 @@
-# Meu Norte · v3.0.2
+# Meu Norte · v3.0.4
 
 Planejador financeiro pessoal (Web App / PWA) com foco em **Fluxo de Caixa Mensal e Anual**, **Importação Inteligente de Extratos e Faturas (`.OFX`, `.CSV`, `.TXT`, `.PDF` e imagens/prints)**, **Gestão de Cartões e Carteiras Digitais**, **Empréstimos e Financiamentos (Tabela Price/SAC)**, **Simulador de Compras e Aluguel**, **Cofrinho de Metas** e **Armazenamento Híbrido Seguro (Nuvem Supabase + Offline First + Ofuscação Criptográfica)**.
 
 > 📘 **Documentação Técnica e Funcional Completa:** consulte [`docs/DOCUMENTACAO-COMPLETA.md`](docs/DOCUMENTACAO-COMPLETA.md) para o manual definitivo do sistema (Arquitetura, Estrutura de Pastas, Requisitos Funcionais `RF01`–`RF14`, Requisitos Não Funcionais `RNF01`–`RNF12`, Regras de Negócio e Fórmulas Matemáticas `RN01`–`RN14`, Modelagem do Banco de Dados, Rotas de API, Segurança/LGPD e Guia de Testes).
+
+> **Atualização v3.0.4:** leitura local de PDFs protegidos por senha, com campo de desbloqueio sem armazenamento de senha/CPF e extração de tabelas via PDF.js. Consulte [FASE-3.0.4.md](docs/FASE-3.0.4.md).
+>
+> **Anterior v3.0.3:** revisão da importação bancária (Itaú/99), proteção da data/saldo inicial, conciliação de duplicatas por descrição, transferências confirmadas e importação em lotes. Consulte [FASE-3.0.3.md](docs/FASE-3.0.3.md) para alterações, limites, testes e pendências.
 
 ---
 
 ## Sumário
 
 1. [Visão Geral e Stack Tecnológica](#1-visão-geral-e-stack-tecnológica)
-2. [Principais Funcionalidades (v3.0.2)](#2-principais-funcionalidades-v302)
+2. [Principais Funcionalidades (v3.0.4)](#2-principais-funcionalidades-v304)
 3. [Arquitetura e Estrutura de Pastas](#3-arquitetura-e-estrutura-de-pastas)
 4. [Requisitos Funcionais (RF01 a RF14)](#4-requisitos-funcionais-rf01-a-rf14)
 5. [Requisitos Não Funcionais (RNF01 a RNF12)](#5-requisitos-não-funcionais-rnf01-a-rnf12)
@@ -40,12 +44,12 @@ O **Meu Norte** é uma aplicação web progressiva (PWA) construída para organi
 
 ---
 
-## 2. Principais Funcionalidades (v3.0.2)
+## 2. Principais Funcionalidades (v3.0.4)
 
 - **Visão Mensal (`Mensal`)**:
   - Indicadores em tempo real: Saldo Real Disponível, Limite do Cheque Especial, Despesas do Mês, Resultado Previsto, Liquidez e Comprometimento da Renda.
   - Tabelas interativas de **Entradas** e **Saídas** com status (`Pago/Recebido`, `Pendente`, `Atrasado`), recorrência (`Fixo`/`Variável`), filtro por categoria e edição inline.
-- **Importação Inteligente de Extratos e Faturas (`v3.0.2`)**:
+- **Importação Inteligente de Extratos e Faturas (`v3.0.4`)**:
   - Leitura direta no navegador (sem enviar arquivos brutos para servidores externos) de **`.OFX`, `.QFX`, `.CSV`, `.TXT`, `.PDF`** e **Imagens/Prints (`.PNG`, `.JPG`, `.WEBP`)** ou texto colado do app do banco.
   - **Conciliação Anti-Duplicação em 3 Camadas**:
     1. Hash determinístico `FITID` / identificador da transação (`imported_hash`);
@@ -268,9 +272,9 @@ npm run build
 
 ## 12. Índice de Documentação (`docs/`)
 
-- 📘 **[`docs/DOCUMENTACAO-COMPLETA.md`](docs/DOCUMENTACAO-COMPLETA.md)** — **Documentação Completa do Projeto (v3.0.2)**: Arquitetura, Requisitos Funcionais (`RF01`–`RF14`), Requisitos Não Funcionais (`RNF01`–`RNF12`), Regras de Negócio e Fórmulas (`RN01`–`RN14`), Dicionário de Dados, API e Guia de Manutenção.
+- 📘 **[`docs/DOCUMENTACAO-COMPLETA.md`](docs/DOCUMENTACAO-COMPLETA.md)** — **Documentação Completa do Projeto (v3.0.3)**: Arquitetura, Requisitos Funcionais (`RF01`–`RF14`), Requisitos Não Funcionais (`RNF01`–`RNF12`), Regras de Negócio e Fórmulas (`RN01`–`RN14`), Dicionário de Dados, API e Guia de Manutenção.
 - [`docs/ESPECIFICACAO.md`](docs/ESPECIFICACAO.md) — Especificação funcional original e fluxos principais.
 - [`docs/MODELO.md`](docs/MODELO.md) — Modelo de domínio inicial e regras de cálculo base.
 - [`docs/SEGURANCA.md`](docs/SEGURANCA.md) — Arquitetura de segurança, autenticação, rate-limiting e headers HTTP.
 - [`docs/USABILIDADE-E-PRIVACIDADE.md`](docs/USABILIDADE-E-PRIVACIDADE.md) — Diretrizes de LGPD, ofuscação criptográfica de dados e usabilidade.
-- [`docs/FASE-2.md`](docs/FASE-2.md) / [`docs/FASE-2.3.md`](docs/FASE-2.3.md) / [`docs/FASE-2.3.4.md`](docs/FASE-2.3.4.md) — Registros históricos da evolução das fases 2.x até a 3.0.2.
+- [`docs/FASE-2.md`](docs/FASE-2.md) / [`docs/FASE-2.3.md`](docs/FASE-2.3.md) / [`docs/FASE-2.3.4.md`](docs/FASE-2.3.4.md) — Registros históricos da evolução das fases 2.x até a 3.0.3.

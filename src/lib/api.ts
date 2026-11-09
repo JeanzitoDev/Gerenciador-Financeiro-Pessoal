@@ -27,9 +27,9 @@ export function checkOrigin(request: Request) {
   if (!origin) throw new ApiError(403, "Origem da solicitação inválida.");
   return origin;
 }
-export async function readJson(request: Request) {
+export async function readJson(request: Request, maxBytes = 12000) {
   const advertised = request.headers.get("content-length");
-  if (advertised && Number(advertised) > 12000)
+  if (advertised && Number(advertised) > maxBytes)
     throw new ApiError(413, "Solicitação muito grande.");
   const reader = request.body?.getReader();
   const decoder = new TextDecoder();
@@ -41,7 +41,7 @@ export async function readJson(request: Request) {
         const chunk = await reader.read();
         if (chunk.done) break;
         bytes += chunk.value.byteLength;
-        if (bytes > 12000) {
+        if (bytes > maxBytes) {
           await reader.cancel();
           throw new ApiError(413, "Solicitação muito grande.");
         }

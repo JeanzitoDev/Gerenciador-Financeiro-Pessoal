@@ -17,7 +17,8 @@ export type DuplicateStatus =
   | "new"
   | "exact_duplicate"
   | "manual_match"
-  | "invoice_payment";
+  | "invoice_payment"
+  | "review_required";
 
 export interface RawImportedRow {
   rawDate: string;
@@ -28,6 +29,7 @@ export interface RawImportedRow {
   kind: "income" | "expense";
   fitId?: string;
   categoryHint?: string;
+  reviewReason?: string;
   installmentNumber?: number;
   totalInstallments?: number;
 }
@@ -46,11 +48,15 @@ export interface StatementPreviewItem {
   externalId: string;
   groupId: string;
   duplicateStatus: DuplicateStatus;
+  reviewReason?: string;
+  transferSuggestion?: boolean;
+  transferAccountId?: string;
   matchedEntry?: {
     id: string;
     description: string;
     date: string;
     amount_cents: number;
+    kind?: Entry["kind"];
   };
   selected: boolean;
 }
@@ -58,6 +64,7 @@ export interface StatementPreviewItem {
 export interface StatementImportPreview {
   format: ImportFormat;
   items: StatementPreviewItem[];
+  error?: string;
   summary: {
     totalParsed: number;
     selectedCount: number;
@@ -66,6 +73,8 @@ export interface StatementImportPreview {
     exactDuplicateCount: number;
     manualMatchCount: number;
     invoicePaymentCount: number;
+    reviewRequiredCount: number;
+    transferCount: number;
   };
 }
 
@@ -171,6 +180,8 @@ const CATEGORY_KEYWORDS: {
       "99 pop",
       "99*",
       "99 tecnologia",
+      "99 taxi",
+      "99pay corrida",
       "cabify",
       "indriver",
       "posto ",
@@ -659,6 +670,12 @@ export function inferCategory(
     }
   }
 
+  // Itaú shortens 99 rides to "PAY DL 99 26/10". Match a standalone
+  // merchant token, never the digits inside a reference/amount (e.g. 199).
+  if (kind === "expense" && /(?:^|\s)(?:99(?:app|pop)?|pay\s+(?:dl\s+)?99)(?=\s|\*|$)/.test(normDesc)) {
+    return "Transporte";
+  }
+
   // Layer 2B: Built-in Brazilian Merchant & Banking Dictionary
   for (const rule of CATEGORY_KEYWORDS) {
     if (rule.kind && rule.kind !== kind) continue;
@@ -972,6 +989,9 @@ export function parseCsvStatement(
   const debitIdx = firstCols.findIndex((c) =>
     /^(debito|saida|despesa)$/.test(c),
   );
+  const directionIdx = firstCols.findIndex((c) =>
+    /^(tipo|natureza|operacao|movimento|dc|d c|credito debito)$/.test(c),
+  );
   const catIdx = firstCols.findIndex((c) => /^(categoria|category)$/.test(c));
   const idIdx = firstCols.findIndex((c) =>
     /^(identificador|id|fitid|codigo|documento)$/.test(c),
@@ -1012,6 +1032,11 @@ export function parseCsvStatement(
         } else if (creditVal && creditVal !== 0) {
           signedCents = Math.abs(creditVal);
         }
+      }
+      if (amountIdx !== -1 && signedCents !== null && directionIdx !== -1) {
+        const direction = normalizeSearchText(cols[directionIdx] || "");
+        if (/^(d|debito|saida|despesa)$/.test(direction)) signedCents = -Math.abs(signedCents);
+        if (/^(c|credito|entrada|receita)$/.test(direction)) signedCents = Math.abs(signedCents);
       }
       if (catIdx !== -1 && cols[catIdx]) categoryHint = cols[catIdx];
       if (idIdx !== -1 && cols[idIdx]) fitId = cols[idIdx];
@@ -1087,6 +1112,7 @@ export function parsePlainTextStatement(
   rawText: string,
   referenceMonth?: string,
   isCreditCardTarget = false,
+  documentType: StatementDocumentType = "unknown",
 ): RawImportedRow[] {
   const lines = rawText
     .split(/\r?\n/)
@@ -1097,9 +1123,14 @@ export function parsePlainTextStatement(
   // Pattern: starts with date (DD/MM/YYYY, DD/MM, DD MMM, YYYY-MM-DD) + description + amount at the end
   const lineRegex =
     /^(\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?|\d{1,2}\s+[A-Za-zçÇ]{3}(?:\s+\d{2,4})?|\d{4}-\d{2}-\d{2})\s+(.+?)\s+([-+]?\s*(?:R\$\s*)?[-+]?\s*(?:\d{1,3}(?:\.\d{3})*,\d{2}|\d+(?:[.,]\d{2})?))\s*([DCdc+-])?$/;
+  // PDF bank table can include the informative balance column after Valor.
+  // Use the FIRST amount as the movement; the second must never be imported.
+  const lineWithBalance =
+    /^(\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?|\d{4}-\d{2}-\d{2})\s+(.+?)\s+([-+]?\s*(?:R\$\s*)?[-+]?\s*\d{1,3}(?:\.\d{3})*,\d{2})\s*([DCdc])?\s+([-+]?\s*(?:R\$\s*)?[-+]?\s*\d{1,3}(?:\.\d{3})*,\d{2})$/;
 
   for (const line of lines) {
-    const match = line.match(lineRegex);
+    const match = (documentType === "bank" ? line.match(lineWithBalance) : null)
+      ?? line.match(lineRegex);
     if (!match) continue;
     const [, rawDate, rawDesc, rawAmount, trailingSign] = match;
     if (/^saldo\s+(anterior|do\s+dia|final|atual|parcial)/i.test(rawDesc.trim())) {
@@ -1115,28 +1146,25 @@ export function parsePlainTextStatement(
     const cleaned = cleanImportedDescription(rawDesc);
 
     let kind: "income" | "expense";
+    let reviewReason: string | undefined;
     if (isCreditCardTarget) {
       kind = isInvoicePaymentDescription(rawDesc) ? "income" : "expense";
+    } else if (signedCents < 0) {
+      kind = "expense";
+    } else if (
+      rawAmount.includes("+") ||
+      trailingSign?.toUpperCase() === "C" ||
+      documentType === "bank"
+    ) {
+      // Itaú bank statements use a signed single Valor column: no minus = credit.
+      kind = "income";
     } else {
-      // In plain text bank statements, if there is no explicit + sign, check whether it's salary/pix recebido or negative
-      const hasExplicitPlus =
-        rawAmount.includes("+") ||
-        (trailingSign && trailingSign.toUpperCase() === "C");
-      const hasExplicitMinus =
-        rawAmount.includes("-") ||
-        (trailingSign && trailingSign.toUpperCase() === "D");
-      if (hasExplicitMinus) {
-        kind = "expense";
-      } else if (
-        hasExplicitPlus ||
-        /\b(salario|recebido|remuneracao|rendimento|deposito|credito)\b/i.test(
-          normalizeSearchText(rawDesc),
-        )
-      ) {
-        kind = "income";
-      } else {
-        kind = "expense";
-      }
+      // A photo transcription without a bank header may omit minus signs.
+      // Do not invent certainty from a merchant name alone.
+      kind = /\b(salario|recebido|deposito|credito)\b/i.test(
+        normalizeSearchText(rawDesc),
+      ) ? "income" : "expense";
+      reviewReason = "Valor sem sinal em texto sem identificação de extrato bancário. Confirme se é entrada ou saída.";
     }
 
     rows.push({
@@ -1146,12 +1174,139 @@ export function parsePlainTextStatement(
       description: cleaned.description,
       amountCents: Math.abs(signedCents),
       kind,
+      reviewReason,
       installmentNumber: cleaned.installmentNumber,
       totalInstallments: cleaned.totalInstallments,
     });
   }
 
   return rows;
+}
+
+const DATED_MOVEMENT_GROUP =
+  /^[^\S\r\n]*\d{1,2}[^\S\r\n]+[a-z]{3}[^\S\r\n]+\d{4}[^\S\r\n]+total de (?:entradas|sa[ií]das)\b/im;
+const MOVEMENT_GROUP_HEADER =
+  /^(?:(\d{1,2}\s+[a-z]{3}\s+\d{4})\s+)?total de (entradas|sa[ií]das)\b\s*(.*)$/i;
+const MOVEMENT_WITH_AMOUNT =
+  /^(.+?)\s+([+-]?\s*(?:R\$\s*)?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})$/;
+
+function parseGroupedBankStatement(rawText: string): {
+  rows: RawImportedRow[];
+  error?: string;
+} {
+  const rows: RawImportedRow[] = [];
+  let group: {
+    rawDate: string;
+    date: string;
+    kind: RawImportedRow["kind"];
+    expectedCents: number;
+    parsedCents: number;
+  } | undefined;
+
+  function groupMismatch(rawDate: string) {
+    return {
+      rows: [],
+      error: `Não foi possível conferir os lançamentos de ${rawDate} com o subtotal do extrato. Tente exportar esse período em OFX ou CSV.`,
+    };
+  }
+
+  for (const rawLine of rawText.split(/\r?\n/)) {
+    const line = rawLine.trim().replace(/\s+/g, " ");
+    const header = line.match(MOVEMENT_GROUP_HEADER);
+    if (header) {
+      const rawDate = header[1] ?? group?.rawDate;
+      if (!rawDate) continue; // Totais do período, antes das movimentações.
+      if (group && group.parsedCents !== group.expectedCents) {
+        return groupMismatch(group.rawDate);
+      }
+
+      const date = parseFlexibleDate(rawDate);
+      const subtotal = parseSignedAmountCents(header[3]);
+      if (!date || subtotal === null || !Number.isSafeInteger(subtotal)) {
+        return groupMismatch(rawDate);
+      }
+      group = {
+        rawDate,
+        date,
+        kind: header[2].toLowerCase() === "entradas" ? "income" : "expense",
+        expectedCents: Math.abs(subtotal),
+        parsedCents: 0,
+      };
+      continue;
+    }
+
+    if (!group) continue;
+    const movement = line.match(MOVEMENT_WITH_AMOUNT);
+    if (!movement) continue;
+    const signedCents = parseSignedAmountCents(movement[2]);
+    if (!signedCents || !Number.isSafeInteger(signedCents)) continue;
+    const amountCents = Math.abs(signedCents);
+    // Preserve the counterparty name, leaving masked identifiers and banking details out.
+    const rawDescription = movement[1].replace(/\s+-\s+[•*].*$/, "");
+    rows.push({
+      rawDate: group.rawDate,
+      date: group.date,
+      rawDescription,
+      description: cleanImportedDescription(rawDescription).description,
+      amountCents,
+      kind: group.kind,
+    });
+    group.parsedCents += amountCents;
+  }
+
+  if (group && group.parsedCents !== group.expectedCents) {
+    return groupMismatch(group.rawDate);
+  }
+  return { rows };
+}
+
+export type StatementDocumentType = "bank" | "invoice" | "unknown";
+
+/** Detect source independently of the destination selected by the user. */
+export function detectStatementDocumentType(
+  rawText: string,
+): StatementDocumentType {
+  const text = normalizeSearchText(rawText.slice(0, 180_000));
+  if (
+    /<bankmsgsrsv1>|<stmtrs>/i.test(rawText.slice(0, 3000)) ||
+    DATED_MOVEMENT_GROUP.test(rawText) ||
+    /\bextrato\s+(?:de\s+)?conta\b/.test(text) ||
+    /\bsaldo\s+do\s+dia\b/.test(text) ||
+    /\blimite\s+da\s+conta\b/.test(text) ||
+    /\bperiodo\s+de\s+visualizacao\b/.test(text)
+  ) return "bank";
+  if (
+    /<creditcardmsgsrsv1>/i.test(rawText.slice(0, 3000)) ||
+    /\bfatura\s+(?:do|de)\s+cartao\b/.test(text) ||
+    /\bresumo\s+da\s+fatura\b/.test(text)
+  ) return "invoice";
+  return "unknown";
+}
+
+export function isPossibleOwnTransfer(description: string): boolean {
+  const text = normalizeSearchText(description);
+  return /\b(?:pix\s+transf|transf(?:erencia)?\s+pix|transferencia|ted\s+(?:enviada|recebida)|doc\s+(?:enviado|recebido))\b/.test(text);
+}
+
+/** Do not match unrelated purchases merely because date and amount coincide. */
+export function reconciliationDescription(description: string): string {
+  return normalizeSearchText(description)
+    .replace(/\b(?:pay\s+dl|pay|compra\s+(?:cartao\s+)?(?:debito|credito)|pix\s+(?:enviado|recebido)|transf(?:erencia)?\s+pix)\b/g, " ")
+    .replace(/\b\d{1,2}[\/.-]\d{1,2}(?:[\/.-]\d{2,4})?\b/g, " ")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function descriptionsMatchForImport(first: string, second: string): boolean {
+  const a = reconciliationDescription(first);
+  const b = reconciliationDescription(second);
+  if (a.length < 2 || b.length < 2) return false;
+  if (a === b) return true;
+  // Allow a merchant and its bank suffix, but not generic substrings.
+  const short = a.length < b.length ? a : b;
+  const long = a.length < b.length ? b : a;
+  return short.length >= 4 && long.startsWith(`${short} `);
 }
 
 export function parseStatementInput(
@@ -1161,11 +1316,14 @@ export function parseStatementInput(
     referenceMonth?: string;
     isCreditCardTarget?: boolean;
   },
-): { format: ImportFormat; rows: RawImportedRow[] } {
-  const trimmed = rawText.trim();
+): { format: ImportFormat; rows: RawImportedRow[]; error?: string } {
+  // PDF/clipboard exports may contain typographic minus signs or NBSP.
+  // Normalize before detecting signed values so credits and debits are not inverted.
+  const trimmed = rawText.replace(/[−–—﹣]/g, "-").replace(/\u00a0/g, " ").trim();
   const lowerName = (options?.fileName ?? "").toLowerCase();
   const refMonth = options?.referenceMonth;
   const isCC = Boolean(options?.isCreditCardTarget);
+  const sourceType = detectStatementDocumentType(trimmed);
 
   if (
     lowerName.endsWith(".ofx") ||
@@ -1185,8 +1343,12 @@ export function parseStatementInput(
     if (csvRows.length > 0) return { format: "csv", rows: csvRows };
   }
 
+  if (DATED_MOVEMENT_GROUP.test(trimmed)) {
+    return { format: "text", ...parseGroupedBankStatement(trimmed) };
+  }
+
   const csvRows = parseCsvStatement(trimmed, refMonth, isCC);
-  const textRows = parsePlainTextStatement(trimmed, refMonth, isCC);
+  const textRows = parsePlainTextStatement(trimmed, refMonth, isCC, sourceType);
 
   if (csvRows.length >= textRows.length && csvRows.length > 0) {
     return { format: "csv", rows: csvRows };
@@ -1200,6 +1362,59 @@ function daysBetween(dateA: string, dateB: string): number {
   const t1 = Date.UTC(y1, (m1 || 1) - 1, d1 || 1);
   const t2 = Date.UTC(y2, (m2 || 1) - 1, d2 || 1);
   return Math.round((t1 - t2) / (1000 * 60 * 60 * 24));
+}
+
+const TRANSFER_PREFIX =
+  /^(?:pix (?:transf(?:erencia)?|enviado|recebido)|transferencia(?: (?:enviada|recebida)(?: pelo pix)?| pix)?|ted(?: enviada| recebida)?|doc(?: enviado| recebido)?)\b/;
+const TRANSFER_DATE_SUFFIX = /\s*\(?(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\)?$/;
+
+function transferDescription(description: string) {
+  const originalDate = description.match(TRANSFER_DATE_SUFFIX);
+  const counterparty = reconciliationDescription(
+    normalizeSearchText(description)
+      .replace(TRANSFER_DATE_SUFFIX, "")
+      .replace(TRANSFER_PREFIX, ""),
+  );
+  return { originalDate, words: counterparty ? counterparty.split(" ") : [] };
+}
+
+function matchesExistingTransfer(entry: Entry, row: RawImportedRow, accountId: string): boolean {
+  const isCredit = row.kind === "income";
+  const sameSide = isCredit ? entry.target_account_id === accountId : entry.source_account_id === accountId;
+  if (!sameSide || !TRANSFER_PREFIX.test(normalizeSearchText(row.rawDescription))) return false;
+
+  const debitDate = isCredit ? entry.date : row.date;
+  const creditDate = isCredit ? row.date : entry.date;
+  const delay = daysBetween(creditDate, debitDate);
+  const debitWeekday = new Date(`${debitDate}T00:00:00Z`).getUTCDay();
+  const crossesWeekend = (debitWeekday === 5 && delay === 3) || (debitWeekday === 6 && delay === 2);
+  if (Math.abs(delay) > 1 && !crossesWeekend) return false;
+
+  const credit = transferDescription(isCredit ? row.rawDescription : entry.description);
+  const debit = transferDescription(isCredit ? entry.description : row.rawDescription);
+  const [year, month, day] = debitDate.split("-");
+  const statedDate = credit.originalDate;
+  if (statedDate && (
+    Number(statedDate[1]) !== Number(day) ||
+    Number(statedDate[2]) !== Number(month) ||
+    (statedDate[3] && statedDate[3] !== year)
+  )) {
+    return false;
+  }
+
+  const [shorter, longer] = credit.words.length <= debit.words.length
+    ? [credit.words, debit.words]
+    : [debit.words, credit.words];
+  if (shorter.length === 0) return false;
+  if (shorter.join(" ") === longer.join(" ")) return true;
+  // An abbreviated last word is stronger evidence when the credit quotes the debit date.
+  return shorter.length >= 2 && shorter.every((word, index) =>
+    word === longer[index] || (
+      index === shorter.length - 1 &&
+      word.length >= (statedDate ? 2 : 4) &&
+      longer[index].startsWith(word)
+    ),
+  );
 }
 
 export function prepareImportPreview(params: {
@@ -1218,7 +1433,7 @@ export function prepareImportPreview(params: {
     defaultClosingDay(dueDay),
   );
 
-  const { format, rows } = parseStatementInput(params.rawText, {
+  const { format, rows, error } = parseStatementInput(params.rawText, {
     fileName: params.fileName,
     referenceMonth: targetInvoiceMonth,
     isCreditCardTarget: isCC,
@@ -1239,6 +1454,7 @@ export function prepareImportPreview(params: {
   );
 
   const claimedManualIds = new Set<string>();
+  const seenInFileExternalIds = new Set<string>();
   const occurrenceCounters = new Map<string, number>();
 
   const items: StatementPreviewItem[] = rows.map((row, idx) => {
@@ -1302,8 +1518,10 @@ export function prepareImportPreview(params: {
       };
     }
 
-    // 2. Exact Duplicate Check (already imported external_id)
-    if (existingExternalIds.has(externalId)) {
+    // 2. Exact duplicate: stored transactions OR repeated FITIDs in this file.
+    const repeatedInFile = seenInFileExternalIds.has(externalId);
+    seenInFileExternalIds.add(externalId);
+    if (existingExternalIds.has(externalId) || repeatedInFile) {
       return {
         id: `preview-${idx}-${hashToken}`,
         date: effectiveDate,
@@ -1325,8 +1543,15 @@ export function prepareImportPreview(params: {
     // 3. Manual / Partial Entry Reconciliation Check
     const manualCandidate = accountExisting.find((e) => {
       if (claimedManualIds.has(e.id)) return false;
-      if (e.kind !== row.kind) return false;
       if (e.amount_cents !== row.amountCents) return false;
+      // Importing the statement of the other side of an already registered
+      // own-account transfer must not create a second transfer or income.
+      if (!isCC && e.kind === "transfer") {
+        return matchesExistingTransfer(e, row, params.targetAccount.id);
+      }
+      if (e.kind !== row.kind) return false;
+      if (!descriptionsMatchForImport(e.description, row.description) &&
+          !descriptionsMatchForImport(e.description, row.rawDescription)) return false;
 
       if (isCC) {
         const meta = parseCreditCardMeta(e.external_id);
@@ -1363,6 +1588,7 @@ export function prepareImportPreview(params: {
           description: manualCandidate.description,
           date: manualCandidate.date,
           amount_cents: manualCandidate.amount_cents,
+          kind: manualCandidate.kind,
         },
         selected: false,
       };
@@ -1381,14 +1607,17 @@ export function prepareImportPreview(params: {
       totalInstallments: installTotal,
       externalId,
       groupId,
-      duplicateStatus: "new",
-      selected: true,
+      duplicateStatus: row.reviewReason ? "review_required" : "new",
+      reviewReason: row.reviewReason,
+      transferSuggestion: !isCC && isPossibleOwnTransfer(row.rawDescription),
+      selected: !row.reviewReason,
     };
   });
 
   return {
     format,
     items,
+    ...(error ? { error } : {}),
     summary: computeImportSummary(items),
   };
 }
@@ -1399,10 +1628,10 @@ export function computeImportSummary(items: StatementPreviewItem[]) {
     totalParsed: items.length,
     selectedCount: selected.length,
     selectedExpenseCents: sumCents(
-      selected.filter((i) => i.kind === "expense").map((i) => i.amountCents),
+      selected.filter((i) => i.kind === "expense" && !i.transferAccountId).map((i) => i.amountCents),
     ),
     selectedIncomeCents: sumCents(
-      selected.filter((i) => i.kind === "income").map((i) => i.amountCents),
+      selected.filter((i) => i.kind === "income" && !i.transferAccountId).map((i) => i.amountCents),
     ),
     exactDuplicateCount: items.filter(
       (i) => i.duplicateStatus === "exact_duplicate",
@@ -1412,6 +1641,10 @@ export function computeImportSummary(items: StatementPreviewItem[]) {
     invoicePaymentCount: items.filter(
       (i) => i.duplicateStatus === "invoice_payment",
     ).length,
+    reviewRequiredCount: items.filter(
+      (i) => i.duplicateStatus === "review_required",
+    ).length,
+    transferCount: selected.filter((i) => Boolean(i.transferAccountId)).length,
   };
 }
 
@@ -1501,17 +1734,23 @@ export function buildImportBatchPayload(params: {
       }
     } else {
       const status = item.date > now ? "planned" : "posted";
+      const counterpart = item.transferAccountId;
+      if (counterpart && counterpart === params.targetAccount.id) {
+        throw new Error("A transferência precisa de outra conta de destino ou origem.");
+      }
       payload.push({
-        kind: item.kind,
+        kind: counterpart ? "transfer" : item.kind,
         description: item.description.slice(0, 80),
         amount_cents: item.amountCents,
         date: item.date,
-        category: item.category || "Outros",
+        category: counterpart ? "Transferência" : (item.category || "Outros"),
         status,
-        source_account_id:
-          item.kind === "expense" ? params.targetAccount.id : null,
-        target_account_id:
-          item.kind === "income" ? params.targetAccount.id : null,
+        source_account_id: counterpart
+          ? (item.kind === "income" ? counterpart : params.targetAccount.id)
+          : (item.kind === "expense" ? params.targetAccount.id : null),
+        target_account_id: counterpart
+          ? (item.kind === "income" ? params.targetAccount.id : counterpart)
+          : (item.kind === "income" ? params.targetAccount.id : null),
         recurrence_id: null,
         occurrence_date: null,
         source: "import",
@@ -1599,6 +1838,58 @@ function extractTextOperatorsFromPdfStream(streamText: string): string[] {
   return lines;
 }
 
+/**
+ * PDF tables often draw each cell in its own BT/Tm/Tj block. Reconstruct rows
+ * by their PDF coordinates instead of treating each cell as an independent line.
+ * This is best effort for text-based PDFs; embedded custom encodings/scans may
+ * still require OFX/CSV or manual review.
+ */
+function extractPositionedPdfLines(streamText: string): string[] {
+  type Cell = { x: number; y: number; value: string };
+  const cells: Cell[] = [];
+  const objects = streamText.match(/\bBT\b[\s\S]*?\bET\b/g) ?? [];
+  for (const object of objects) {
+    let x = 0;
+    let y = 0;
+    let positioned = false;
+    // Text positions and actual PDF literal/array show operators.
+    const operations = /(-?(?:\d+\.?\d*|\.\d+)\s+-?(?:\d+\.?\d*|\.\d+)\s+-?(?:\d+\.?\d*|\.\d+)\s+-?(?:\d+\.?\d*|\.\d+)\s+(-?(?:\d+\.?\d*|\.\d+))\s+(-?(?:\d+\.?\d*|\.\d+))\s+Tm)|(-?(?:\d+\.?\d*|\.\d+))\s+(-?(?:\d+\.?\d*|\.\d+))\s+(Td|TD)|((?:\((?:\\.|[^\\()])*\)|\[(?:\\.|[^\[\]])*\])\s*(?:Tj|TJ|'))/g;
+    let result: RegExpExecArray | null;
+    while ((result = operations.exec(object)) !== null) {
+      if (result[1]) {
+        x = Number(result[2]);
+        y = Number(result[3]);
+        positioned = true;
+      } else if (result[4]) {
+        x += Number(result[4]);
+        y += Number(result[5]);
+        positioned = true;
+      } else if (result[7] && positioned) {
+        const text = (result[7].match(/\((?:\\.|[^\\()])*\)/g) ?? [])
+          .map((v) => decodePdfLiteralString(v.slice(1, -1)))
+          .join("").trim();
+        if (text) cells.push({ x, y, value: text });
+      }
+    }
+  }
+  if (cells.length < 3) return [];
+  const rows: { y: number; cells: Cell[] }[] = [];
+  for (const cell of cells) {
+    const row = rows.find((r) => Math.abs(r.y - cell.y) <= 2.3);
+    if (row) row.cells.push(cell);
+    else rows.push({ y: cell.y, cells: [cell] });
+  }
+  // PDF coordinate origin is bottom left. The source order is page/stream order.
+  const lines = rows
+    .sort((a, b) => b.y - a.y)
+    .map((row) => row.cells.sort((a, b) => a.x - b.x)
+      .map((c) => c.value).join(" ").replace(/\s+/g, " ").trim());
+  // Prefer coordinates only when they produced plausible complete statement rows.
+  return lines.some((l) => /^\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?\s+\S+/.test(l))
+    ? lines
+    : [];
+}
+
 async function tryInflateBytes(bytes: Uint8Array): Promise<string | null> {
   if (typeof DecompressionStream === "undefined") return null;
   for (const format of ["deflate", "deflate-raw"] as const) {
@@ -1629,7 +1920,8 @@ export async function extractTextFromPdfBuffer(
   while ((match = streamRegex.exec(rawLatin1)) !== null) {
     const content = match[1];
     if (content.includes("Tj") || content.includes("TJ")) {
-      extractedLines.push(...extractTextOperatorsFromPdfStream(content));
+      const positioned = extractPositionedPdfLines(content);
+      extractedLines.push(...(positioned.length ? positioned : extractTextOperatorsFromPdfStream(content)));
       continue;
     }
     // Attempt FlateDecode decompression
@@ -1639,7 +1931,8 @@ export async function extractTextFromPdfBuffer(
     }
     const inflated = await tryInflateBytes(streamByteSlice);
     if (inflated && (inflated.includes("Tj") || inflated.includes("TJ"))) {
-      extractedLines.push(...extractTextOperatorsFromPdfStream(inflated));
+      const positioned = extractPositionedPdfLines(inflated);
+      extractedLines.push(...(positioned.length ? positioned : extractTextOperatorsFromPdfStream(inflated)));
     }
   }
 

@@ -21,14 +21,19 @@ import { isCreditWalletAccount } from "@/lib/finance/credit-cards";
 import {
   buildImportBatchPayload,
   computeImportSummary,
-  extractTextFromPdfBuffer,
+  detectStatementDocumentType,
   prepareImportPreview,
   sampleBankStatementText,
   sampleCreditCardInvoiceText,
   type StatementPreviewItem,
 } from "@/lib/finance/statement-import";
+import { PdfImportError, readBankPdf } from "@/lib/finance/pdf-reader";
 import SelectControl from "./select-control";
 import { MonthControl } from "./date-control";
+
+export const STATEMENT_MAX_PDF_BYTES = 10 * 1024 * 1024;
+export const STATEMENT_MAX_TEXT_BYTES = 5 * 1024 * 1024;
+export const STATEMENT_IMPORT_CHUNK_SIZE = 75;
 
 export const STATEMENT_FILE_ACCEPT =
   "image/*,application/pdf,text/csv,text/plain,application/vnd.ms-excel,application/x-ofx,.ofx,.qfx,.csv,.tsv,.txt,.pdf,*/*";
@@ -96,6 +101,8 @@ export default function StatementImportModal({
 }: StatementImportModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pdfPasswordInputRef = useRef<HTMLInputElement>(null);
+  const fileReadSequenceRef = useRef(0);
 
   const defaultAccount =
     data.accounts.find((a) => a.id === initialAccountId) ??
@@ -115,6 +122,9 @@ export default function StatementImportModal({
     useState<boolean>(true);
   const [inputMode, setInputMode] = useState<"file" | "paste">("file");
   const [fileName, setFileName] = useState<string>("");
+  const [protectedPdf, setProtectedPdf] = useState<File | null>(null);
+  const [unlockingPdf, setUnlockingPdf] = useState(false);
+  const [readingPdf, setReadingPdf] = useState(false);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string>("");
   const [rawText, setRawText] = useState<string>("");
   const [items, setItems] = useState<StatementPreviewItem[]>([]);
@@ -172,6 +182,10 @@ export default function StatementImportModal({
     targetAccount.id === FALLBACK_CHECKING_ACCOUNT.id ||
     targetAccount.id === FALLBACK_CARD_ACCOUNT.id;
   const isCreditCard = targetAccount.kind === "credit_card";
+  const sourceType = useMemo(() => detectStatementDocumentType(rawText), [rawText]);
+  const sourceMismatch =
+    (sourceType === "bank" && isCreditCard) ||
+    (sourceType === "invoice" && !isCreditCard);
   const isWallet = isCreditWalletAccount(targetAccount);
 
   const availableCategories = useMemo(() => {
@@ -183,7 +197,17 @@ export default function StatementImportModal({
 
   const handleFileUpload = useCallback(async (file: File | undefined | null) => {
     if (!file) return;
+    const sequence = ++fileReadSequenceRef.current;
+    setReadingPdf(false);
     setError("");
+    setProtectedPdf(null);
+    if (pdfPasswordInputRef.current) pdfPasswordInputRef.current.value = "";
+    setRawText("");
+    setItems([]);
+    setImagePreviewUrl((previous) => {
+      if (previous) URL.revokeObjectURL(previous);
+      return "";
+    });
     setFileName(file.name);
     const lower = file.name.toLowerCase();
     const isImage =
@@ -191,6 +215,20 @@ export default function StatementImportModal({
       /\.(png|jpe?g|webp|heic|gif)$/i.test(lower);
     const isPdf =
       file.type === "application/pdf" || lower.endsWith(".pdf");
+    const maxBytes = isPdf || isImage
+      ? STATEMENT_MAX_PDF_BYTES : STATEMENT_MAX_TEXT_BYTES;
+    if (file.size > maxBytes) {
+      setError(`Arquivo muito grande. O limite é ${Math.round(maxBytes / 1048576)} MB para este formato. Exporte um período menor e tente novamente.`);
+      return;
+    }
+    if (file.size === 0) {
+      setError("Este arquivo está vazio.");
+      return;
+    }
+    if (!isPdf && !isImage && !/\.(ofx|qfx|csv|tsv|txt)$/i.test(lower)) {
+      setError("Formato não reconhecido. Use OFX, QFX, CSV, TSV, TXT ou PDF.");
+      return;
+    }
 
     if (isImage) {
       const url = URL.createObjectURL(file);
@@ -210,14 +248,27 @@ export default function StatementImportModal({
     try {
       const buffer = await file.arrayBuffer();
       if (isPdf) {
-        const pdfText = await extractTextFromPdfBuffer(buffer);
-        if (pdfText.trim()) {
-          setRawText(pdfText);
-        } else {
-          setInputMode("paste");
-          setError(
-            "Este PDF parece estar escaneado como imagem ou protegido. Copie as linhas do PDF e cole no campo abaixo, ou exporte em .OFX / .CSV no app do banco.",
-          );
+        setReadingPdf(true);
+        try {
+          const pdfText = await readBankPdf(buffer);
+          if (sequence !== fileReadSequenceRef.current) return;
+          if (pdfText.trim()) {
+            setRawText(pdfText);
+          } else {
+            setInputMode("paste");
+            setError("O PDF não contém texto selecionável. Para documentos escaneados, exporte OFX/CSV ou cole o texto do banco.");
+          }
+        } catch (pdfError) {
+          if (sequence !== fileReadSequenceRef.current) return;
+          if (pdfError instanceof PdfImportError && pdfError.code === "password-required") {
+            setProtectedPdf(file);
+            setInputMode("file");
+            setError("");
+          } else {
+            setError(pdfError instanceof Error ? pdfError.message : "Não foi possível abrir o PDF.");
+          }
+        } finally {
+          if (sequence === fileReadSequenceRef.current) setReadingPdf(false);
         }
         return;
       }
@@ -227,11 +278,48 @@ export default function StatementImportModal({
       if (text.includes("\uFFFD")) {
         text = new TextDecoder("iso-8859-1").decode(buffer);
       }
-      setRawText(text);
+      if (sequence === fileReadSequenceRef.current) setRawText(text);
     } catch {
-      setError("Não foi possível ler o arquivo selecionado.");
+      if (sequence === fileReadSequenceRef.current) {
+        setError("Não foi possível ler o arquivo selecionado.");
+        setReadingPdf(false);
+      }
     }
   }, []);
+
+  const handlePdfUnlock = useCallback(async () => {
+    if (!protectedPdf || unlockingPdf) return;
+    const password = pdfPasswordInputRef.current?.value ?? "";
+    if (!password) {
+      setError("Informe a senha que você usa para abrir o PDF.");
+      pdfPasswordInputRef.current?.focus();
+      return;
+    }
+    // Esqueça o valor do campo imediatamente; a senha é usada apenas nesta leitura local.
+    if (pdfPasswordInputRef.current) pdfPasswordInputRef.current.value = "";
+    setError("");
+    setUnlockingPdf(true);
+    const sequence = fileReadSequenceRef.current;
+    try {
+      const text = await readBankPdf(await protectedPdf.arrayBuffer(), password);
+      if (sequence !== fileReadSequenceRef.current) return;
+      if (!text.trim()) {
+        setInputMode("paste");
+        setError("O PDF foi desbloqueado, mas não contém texto selecionável. Tente OFX/CSV ou cole o extrato.");
+      } else {
+        setRawText(text);
+      }
+      setProtectedPdf(null);
+    } catch (pdfError) {
+      if (sequence !== fileReadSequenceRef.current) return;
+      setError(pdfError instanceof Error ? pdfError.message : "Não foi possível desbloquear o PDF.");
+      if (!(pdfError instanceof PdfImportError && pdfError.code === "password-incorrect")) {
+        setProtectedPdf(null);
+      }
+    } finally {
+      setUnlockingPdf(false);
+    }
+  }, [protectedPdf, unlockingPdf]);
 
   useEffect(() => {
     if (initialFile) {
@@ -241,7 +329,7 @@ export default function StatementImportModal({
 
   // Re-run preview whenever rawText, targetAccount, or invoiceMonth changes
   useEffect(() => {
-    if (!rawText.trim() || !targetAccount) {
+    if (!rawText.trim() || !targetAccount || sourceMismatch || rawText.length > STATEMENT_MAX_TEXT_BYTES) {
       setItems([]);
       return;
     }
@@ -254,12 +342,13 @@ export default function StatementImportModal({
       recurrences: data.recurrences,
     });
     setItems(preview.items);
-    setError("");
+    setError(preview.error ?? "");
   }, [
     rawText,
     fileName,
     targetAccount,
     isCreditCard,
+    sourceMismatch,
     invoiceMonth,
     data.transactions,
     data.recurrences,
@@ -325,12 +414,21 @@ export default function StatementImportModal({
     patch: Partial<
       Pick<
         StatementPreviewItem,
-        "selected" | "description" | "category" | "kind"
+        "selected" | "description" | "category" | "kind" | "transferAccountId"
       >
     >,
   ) {
     setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const reviewed = item.duplicateStatus === "review_required" &&
+          (patch.kind !== undefined || patch.selected === true);
+        return {
+          ...item,
+          ...patch,
+          ...(reviewed ? { duplicateStatus: "new" as const, reviewReason: undefined } : {}),
+        };
+      }),
     );
   }
 
@@ -349,6 +447,22 @@ export default function StatementImportModal({
       );
       return;
     }
+    if (sourceMismatch) {
+      setError("O arquivo e a conta escolhida são de tipos diferentes. Selecione uma conta corrente para extratos ou um cartão para faturas.");
+      return;
+    }
+    const chosen = items.filter((item) => item.selected);
+    if (chosen.some((item) => item.date < targetAccount.opening_date)) {
+      setError(`Há lançamentos anteriores à abertura de ${targetAccount.name} (${formatDate(targetAccount.opening_date)}). Antes de importar, revise a data e o saldo inicial no cadastro dessa conta. O Meu Norte não alterará esse saldo automaticamente.`);
+      return;
+    }
+    if (chosen.some((item) => item.transferAccountId && !data.accounts.some((a) =>
+      a.id === item.transferAccountId && a.id !== targetAccount.id &&
+      a.kind !== "credit_card" && a.kind !== "benefit" &&
+      a.opening_date <= item.date))) {
+      setError("A outra conta da transferência também precisa existir na data do movimento. Revise as datas de abertura das contas.");
+      return;
+    }
     const batch = buildImportBatchPayload({
       items,
       targetAccount,
@@ -363,10 +477,21 @@ export default function StatementImportModal({
     setBusy(true);
     setError("");
     try {
-      await onSubmit("transactions", "POST", {
-        is_statement_import: true,
-        batch_entries: batch,
-      });
+      let saved = 0;
+      for (let offset = 0; offset < batch.length; offset += STATEMENT_IMPORT_CHUNK_SIZE) {
+        const part = batch.slice(offset, offset + STATEMENT_IMPORT_CHUNK_SIZE);
+        try {
+          await onSubmit("transactions", "POST", {
+            is_statement_import: true,
+            batch_entries: part,
+          });
+          saved += part.length;
+        } catch (err) {
+          throw new Error(saved > 0
+            ? `${saved} lançamentos foram salvos, mas o lote seguinte falhou. Reabra o extrato para verificar os itens já importados antes de tentar novamente. ${err instanceof Error ? err.message : ""}`
+            : (err instanceof Error ? err.message : "Não foi possível importar."));
+        }
+      }
       const futureCount = batch.length - summary.selectedCount;
       const msg =
         futureCount > 0
@@ -424,7 +549,7 @@ export default function StatementImportModal({
     >
       <div className="dialog-head">
         <div>
-          <p className="eyebrow">Importação inteligente · v3.0.2</p>
+          <p className="eyebrow">Importação inteligente · v3.0.4</p>
           <h2>Importar extrato ou fatura</h2>
         </div>
         <button
@@ -530,6 +655,17 @@ export default function StatementImportModal({
             )}
           </div>
 
+          {sourceMismatch && (
+            <div className="info-box" role="alert">
+              <Info size={18} />
+              <div>
+                <strong>Confira o destino do arquivo.</strong>{" "}
+                {sourceType === "bank"
+                  ? "Este arquivo parece ser um extrato de conta, mas você escolheu um cartão. Selecione a conta bancária correta para preservar entradas e saídas."
+                  : "Este arquivo parece ser uma fatura de cartão. Selecione o cartão correto para evitar alterar seu saldo bancário."}
+              </div>
+            </div>
+          )}
           <div className="import-source-tabs">
             <div className="segmented">
               <button
@@ -583,8 +719,9 @@ export default function StatementImportModal({
           />
 
           {inputMode === "file" ? (
-            <div
-              className="import-dropzone"
+            <div className="import-file-area">
+              <div
+                className="import-dropzone"
               role="button"
               tabIndex={0}
               onClick={() => fileInputRef.current?.click()}
@@ -614,9 +751,42 @@ export default function StatementImportModal({
                   opção de <strong>Fotos ou Arquivos</strong> para escolher{" "}
                   <strong>.OFX</strong>, <strong>.CSV</strong>,{" "}
                   <strong>.PDF</strong> ou <strong>print/foto</strong> de qualquer
-                  banco.
+                  banco. Limites: PDFs e imagens até 10 MB; OFX, CSV e TXT até 5 MB.
+                  PDFs com senha podem ser desbloqueados aqui no aparelho. Arquivos escaneados podem exigir texto colado ou exportação OFX/CSV.
                 </p>
               </div>
+            </div>
+            {readingPdf && <p className="muted" role="status">Lendo o PDF no seu aparelho...</p>}
+            {protectedPdf && (
+              <div className="import-password-panel" role="group" aria-label="Desbloquear PDF">
+                <strong>Este PDF está protegido por senha</strong>
+                <p className="muted">Digite a senha usada para abrir o extrato no banco (em alguns bancos, é o CPF). Ela será usada somente neste aparelho, para esta leitura, sem envio ao servidor nem armazenamento.</p>
+                <label className="form-field">
+                  <span>Senha do PDF</span>
+                  <input
+                    ref={pdfPasswordInputRef}
+                    type="password"
+                    aria-label="Senha do PDF protegido"
+                    autoComplete="off"
+                    spellCheck={false}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void handlePdfUnlock();
+                      }
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="button primary"
+                  disabled={unlockingPdf}
+                  onClick={() => void handlePdfUnlock()}
+                >
+                  {unlockingPdf ? "Desbloqueando no aparelho..." : "Desbloquear e ler PDF"}
+                </button>
+              </div>
+            )}
             </div>
           ) : (
             <div className="import-paste-container">
@@ -667,7 +837,8 @@ export default function StatementImportModal({
                   }}
                 />
                 <small>
-                  Reconhece datas (<code>DD/MM/AAAA</code>, <code>DD/MM</code>,{" "}
+                  Textos sem sinal precisam de revisão. PDFs até 10 MB; OFX, CSV e TXT até 5 MB.
+                  {" "}Reconhece datas (<code>DD/MM/AAAA</code>, <code>DD/MM</code>,{" "}
                   <code>12 OUT</code> ou <code>AAAA-MM-DD</code>), parcelas (
                   <code>01/03</code>), valores em R$ e categoriza cada item
                   automaticamente.
@@ -676,7 +847,14 @@ export default function StatementImportModal({
             </div>
           )}
 
-          {rawText.trim() && items.length === 0 && (
+          {rawText.length > STATEMENT_MAX_TEXT_BYTES && (
+            <div className="info-box" role="alert">
+              <Info size={16} />
+              O texto extraído ultrapassou 5 MB. Divida o extrato por períodos menores antes de importar.
+            </div>
+          )}
+
+          {rawText.trim() && items.length === 0 && rawText.length <= STATEMENT_MAX_TEXT_BYTES && !sourceMismatch && !error && (
             <div className="info-box" role="status">
               <Info size={16} />
               Nenhum lançamento reconhecido neste formato. Verifique se cada
@@ -689,11 +867,30 @@ export default function StatementImportModal({
 
         {items.length > 0 && (
           <div className="import-preview-section">
+            {!isCreditCard && (
+              <div className="info-box" role="status">
+                <Info size={16} />
+                <span>
+                  <strong>Importação retroativa:</strong> o saldo inicial da conta deve ser o valor que havia no dia da abertura, antes dos movimentos importados. Importar períodos já incluídos nesse saldo pode contá-los duas vezes. O app não modifica a abertura automaticamente.
+                  {items.some((item) => item.selected && item.date < targetAccount.opening_date) && (
+                    <strong> Há itens anteriores à abertura ({formatDate(targetAccount.opening_date)}): ajuste a conta antes de confirmar.</strong>
+                  )}
+                </span>
+              </div>
+            )}
             <div className="import-summary-bar">
               <div className="import-summary-badges">
                 <span className="badge success">
                   {summary.selectedCount} selecionados para importar
                 </span>
+                {summary.reviewRequiredCount > 0 && (
+                  <span className="badge warning">
+                    {summary.reviewRequiredCount} lançamento(s) com sentido a conferir
+                  </span>
+                )}
+                {summary.transferCount > 0 && (
+                  <span className="badge">{summary.transferCount} transferência(s) entre suas contas</span>
+                )}
                 {summary.manualMatchCount > 0 && (
                   <span className="badge warning">
                     {summary.manualMatchCount}{" "}
@@ -791,17 +988,24 @@ export default function StatementImportModal({
               aria-label="Prévia dos lançamentos para importação"
             >
               {filteredItems.map((item) => {
+                const matchedTransfer = item.matchedEntry?.kind === "transfer";
                 const statusLabel =
-                  item.duplicateStatus === "new"
-                    ? "Novo"
-                    : item.duplicateStatus === "manual_match"
-                      ? "Já lançado manualmente?"
-                      : item.duplicateStatus === "exact_duplicate"
-                        ? "Já importado"
-                        : "Pagamento de fatura";
+                  matchedTransfer
+                    ? "Possível transferência já registrada"
+                    : item.duplicateStatus === "new"
+                      ? "Novo"
+                      : item.duplicateStatus === "review_required"
+                        ? "Conferir entrada/saída"
+                        : item.duplicateStatus === "manual_match"
+                          ? "Já lançado manualmente?"
+                          : item.duplicateStatus === "exact_duplicate"
+                            ? "Já importado"
+                            : "Pagamento de fatura";
                 const statusClass =
                   item.duplicateStatus === "new"
                     ? "success"
+                    : item.duplicateStatus === "review_required"
+                      ? "warning"
                     : item.duplicateStatus === "manual_match"
                       ? "warning"
                       : "";
@@ -889,10 +1093,47 @@ export default function StatementImportModal({
                         )}
                       </div>
 
-                      {item.duplicateStatus === "manual_match" &&
+                      {item.reviewReason && (
+                        <small className="import-match-hint" role="status">
+                          {item.reviewReason} Escolha o tipo correto e marque o lançamento para importar.
+                        </small>
+                      )}
+                      {!isCreditCard && targetAccount.kind !== "benefit" &&
+                        (item.transferSuggestion || item.transferAccountId) && (
+                        <div className="import-transfer-options">
+                          <label className="checkbox-row">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(item.transferAccountId)}
+                              onChange={(e) => updateItem(item.id, {
+                                transferAccountId: e.target.checked
+                                  ? (data.accounts.find((a) =>
+                                      a.id !== targetAccount.id &&
+                                      a.kind !== "credit_card" && a.kind !== "benefit")?.id ?? "")
+                                  : "",
+                              })}
+                            />
+                            <span>É uma transferência entre minhas contas (não contar como receita/despesa)</span>
+                          </label>
+                          {item.transferAccountId && (
+                            <SelectControl
+                              label="Outra conta envolvida na transferência"
+                              allowEmpty={false}
+                              value={item.transferAccountId}
+                              onChange={(v) => updateItem(item.id, { transferAccountId: v })}
+                              options={data.accounts
+                                .filter((a) => a.id !== targetAccount.id && a.kind !== "credit_card" && a.kind !== "benefit")
+                                .map((a) => [a.id, a.name])}
+                            />
+                          )}
+                        </div>
+                      )}
+                      {(item.duplicateStatus === "manual_match" || matchedTransfer) &&
                         item.matchedEntry && (
                           <small className="import-match-hint">
-                            Coincide com lançamento já existente:{" "}
+                            {matchedTransfer
+                              ? "Confira a transferência já registrada: "
+                              : "Coincide com lançamento já existente: "}
                             <strong>{item.matchedEntry.description}</strong> (
                             {formatMoney(item.matchedEntry.amount_cents)} em{" "}
                             {formatDate(item.matchedEntry.date)}). Desmarcado
@@ -937,7 +1178,7 @@ export default function StatementImportModal({
         <button
           type="button"
           className="button primary"
-          disabled={busy || summary.selectedCount === 0}
+          disabled={busy || summary.selectedCount === 0 || sourceMismatch || items.some((item) => item.selected && item.date < targetAccount.opening_date)}
           onClick={() => void handleConfirmImport()}
         >
           {isCreditCard ? (
