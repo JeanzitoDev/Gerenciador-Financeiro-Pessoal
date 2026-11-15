@@ -141,6 +141,15 @@ export const transactionSchema = z
         path: ["gross_cents"],
       });
   });
+export const TRANSACTION_BATCH_LIMIT = 100;
+export const transactionBatchIdsSchema = z.array(id).min(1).max(TRANSACTION_BATCH_LIMIT);
+export const transactionBatchChangesSchema = z.strictObject({
+  description: text(140).optional(),
+  category: text(60).optional(),
+}).refine((changes) => changes.description !== undefined || changes.category !== undefined, {
+  message: "Informe uma descrição ou categoria para alterar.",
+});
+
 export const recurrenceSchema = z
   .object({
     kind: z.enum(["income", "expense"]),

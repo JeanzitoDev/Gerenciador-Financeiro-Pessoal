@@ -1,10 +1,16 @@
-# Meu Norte · v3.0.4
+# Meu Norte · v3.0.7
 
 Planejador financeiro pessoal (Web App / PWA) com foco em **Fluxo de Caixa Mensal e Anual**, **Importação Inteligente de Extratos e Faturas (`.OFX`, `.CSV`, `.TXT`, `.PDF` e imagens/prints)**, **Gestão de Cartões e Carteiras Digitais**, **Empréstimos e Financiamentos (Tabela Price/SAC)**, **Simulador de Compras e Aluguel**, **Cofrinho de Metas** e **Armazenamento Híbrido Seguro (Nuvem Supabase + Offline First + Ofuscação Criptográfica)**.
 
 > 📘 **Documentação Técnica e Funcional Completa:** consulte [`docs/DOCUMENTACAO-COMPLETA.md`](docs/DOCUMENTACAO-COMPLETA.md) para o manual definitivo do sistema (Arquitetura, Estrutura de Pastas, Requisitos Funcionais `RF01`–`RF14`, Requisitos Não Funcionais `RNF01`–`RNF12`, Regras de Negócio e Fórmulas Matemáticas `RN01`–`RN14`, Modelagem do Banco de Dados, Rotas de API, Segurança/LGPD e Guia de Testes).
 
-> **Atualização v3.0.4:** leitura local de PDFs protegidos por senha, com campo de desbloqueio sem armazenamento de senha/CPF e extração de tabelas via PDF.js. Consulte [FASE-3.0.4.md](docs/FASE-3.0.4.md).
+> **Atualização v3.0.7** — A Visão Geral abre a retrospectiva do último mês fechado. No celular, balanço por conta e histórico mostram resumos com detalhes ao tocar.
+>
+> **Anterior v3.0.6** — Relatórios abre com a análise do mês, compara os gastos com o período equivalente anterior e traz uma retrospectiva para cada mês fechado.
+>
+> **Anterior v3.0.5** — filtro de vários meses e ações em lote nos lançamentos. A importação permite escolher a conta antes de abrir os arquivos e filtrar transferências e duplicados em uma prévia mais compacta.
+>
+> **Anterior v3.0.4:** leitura local de PDFs protegidos por senha, com campo de desbloqueio sem armazenamento de senha/CPF e extração de tabelas via PDF.js. Consulte [FASE-3.0.4.md](docs/FASE-3.0.4.md).
 >
 > **Anterior v3.0.3:** revisão da importação bancária (Itaú/99), proteção da data/saldo inicial, conciliação de duplicatas por descrição, transferências confirmadas e importação em lotes. Consulte [FASE-3.0.3.md](docs/FASE-3.0.3.md) para alterações, limites, testes e pendências.
 
@@ -13,7 +19,7 @@ Planejador financeiro pessoal (Web App / PWA) com foco em **Fluxo de Caixa Mensa
 ## Sumário
 
 1. [Visão Geral e Stack Tecnológica](#1-visão-geral-e-stack-tecnológica)
-2. [Principais Funcionalidades (v3.0.4)](#2-principais-funcionalidades-v304)
+2. [Principais Funcionalidades (v3.0.7)](#2-principais-funcionalidades-v307)
 3. [Arquitetura e Estrutura de Pastas](#3-arquitetura-e-estrutura-de-pastas)
 4. [Requisitos Funcionais (RF01 a RF14)](#4-requisitos-funcionais-rf01-a-rf14)
 5. [Requisitos Não Funcionais (RNF01 a RNF12)](#5-requisitos-não-funcionais-rnf01-a-rnf12)
@@ -44,7 +50,7 @@ O **Meu Norte** é uma aplicação web progressiva (PWA) construída para organi
 
 ---
 
-## 2. Principais Funcionalidades (v3.0.4)
+## 2. Principais Funcionalidades (v3.0.7)
 
 - **Visão Mensal (`Mensal`)**:
   - Indicadores em tempo real: Saldo Real Disponível, Limite do Cheque Especial, Despesas do Mês, Resultado Previsto, Liquidez e Comprometimento da Renda.

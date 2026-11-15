@@ -78,10 +78,10 @@ import {
 } from "@/lib/finance/engine";
 import { exportEntries } from "@/lib/finance/csv";
 import RecordForm, { type FormState } from "./record-form";
-import StatementImportModal, {
-  STATEMENT_FILE_ACCEPT,
-} from "./statement-import-modal";
-import FinanceChart from "./charts";
+import StatementImportModal from "./statement-import-modal";
+import CategoryInput from "./category-input";
+import { TRANSACTION_BATCH_LIMIT } from "@/lib/validation";
+import FinanceChart, { MonthlyCashFlowChart } from "./charts";
 import Simulator from "./simulator";
 import GettingStarted from "./getting-started";
 import { goalBlockers } from "@/lib/finance/goal-dependencies";
@@ -91,13 +91,15 @@ import PendingRecurrences from "./pending-recurrences";
 import LoansSection, { type LoanPayment } from "./loans-section";
 import DeleteAccount from "./delete-account";
 import MobileSheet from "./mobile-sheet";
-import { MonthControl } from "./date-control";
+import DateControl, { MonthControl } from "./date-control";
 import { APP_VERSION } from "@/lib/version";
 import MoneyInput from "./money-input";
 import SelectControl from "./select-control";
 import PiggyBankBoard from "./piggy-bank-board";
 import { entryStatusLabel, isPaidEarly } from "@/lib/finance/entry-status";
-import { buildMonthlyReport } from "@/lib/finance/reports";
+import { buildMonthlyReport, retrospectiveMonth } from "@/lib/finance/reports";
+import { MonthlyReportReading, MonthlyRetrospective } from "./monthly-review";
+import { MobileAccountRows, MobileHistoryRows } from "./report-mobile-rows";
 import {
   buildDateWithDay,
   creditCardSummary,
@@ -115,6 +117,13 @@ type Screen =
   | "reports"
   | "settings"
   | "simulator";
+type LedgerRange = { start: string; end: string };
+
+function closeLedgerPeriodMenu(menu: HTMLDetailsElement | null) {
+  if (!menu) return;
+  menu.open = false;
+  menu.querySelector("summary")?.focus();
+}
 const nav: { id: Screen; label: string; icon: LucideIcon }[] = [
   { id: "overview", label: "Visão geral", icon: LayoutDashboard },
   { id: "transactions", label: "Lançamentos", icon: ArrowLeftRight },
@@ -276,6 +285,13 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
   const [search, setSearch] = useState(""),
     [kind, setKind] = useState("all"),
     [status, setStatus] = useState("all");
+  const [ledgerMonths, setLedgerMonths] = useState<string[]>([]);
+  const [ledgerRange, setLedgerRange] = useState<LedgerRange | null>(null);
+  const [ledgerRangeDraft, setLedgerRangeDraft] = useState<LedgerRange | null>(null);
+  const [selectedEntryIds, setSelectedEntryIds] = useState(new Set<string>());
+  const [bulkEdit, setBulkEdit] = useState<{ description: string; category: string } | null>(null);
+  const [bulkRemove, setBulkRemove] = useState<string[] | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [planBudget, setPlanBudget] = useState("0,00"),
     [strategy, setStrategy] = useState<PlanningStrategy>("date");
   const [profileMenu, setProfileMenu] = useState(false),
@@ -285,20 +301,25 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
   const [importModal, setImportModal] = useState<{
     accountId?: string;
     invoiceMonth?: string;
-    initialFile?: File | null;
   } | null>(null);
-  const quickImportInputRef = useRef<HTMLInputElement>(null);
-  function openImportModal(
-    preset: { accountId?: string; invoiceMonth?: string } = {},
-    triggerFilePicker = true,
-  ) {
+  function openImportModal(preset: { accountId?: string; invoiceMonth?: string } = {}) {
     setImportModal(preset);
-    if (triggerFilePicker) {
-      quickImportInputRef.current?.click();
-    }
   }
   const [reportHorizon, setReportHorizon] = useState<6 | 12>(6);
   const [reportAccount, setReportAccount] = useState("");
+  const [reportDate, setReportDate] = useState(today);
+  const [reviewSelection, setReviewSelection] = useState<{ month: string; accountId: string } | null>(null);
+  useEffect(() => {
+    if (screen !== "reports" && screen !== "overview") return;
+    const refreshDate = () => setReportDate(today());
+    refreshDate();
+    const timer = window.setInterval(refreshDate, 60_000);
+    document.addEventListener("visibilitychange", refreshDate);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshDate);
+    };
+  }, [screen]);
   const [reportTarget, setReportTarget] = useState<
     "categories" | "flow" | null
   >(null);
@@ -340,7 +361,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
       },
     }));
   }
-  const asOf = today();
+  const asOf = screen === "reports" || screen === "overview" ? reportDate : today();
   const request = useCallback(async (path: string, options?: RequestInit) => {
     const response = await fetch(path, {
       ...options,
@@ -392,6 +413,8 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
         !form &&
         !importModal &&
         !remove &&
+        !bulkRemove &&
+        !bulkBusy &&
         !savingPrefs &&
         !savingOnboarding
       )
@@ -403,7 +426,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
       clearInterval(timer);
       window.removeEventListener("focus", refresh);
     };
-  }, [demo, load, form, importModal, remove, savingPrefs, savingOnboarding]);
+  }, [demo, load, form, importModal, remove, bulkRemove, bulkBusy, savingPrefs, savingOnboarding]);
   useEffect(() => {
     const update = () => setOffline(!navigator.onLine);
     update();
@@ -524,6 +547,31 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
     }
     setToast("Registro excluído.");
   }
+  async function mutateSelectedEntries(ids: string[], changes?: { description?: string; category?: string }) {
+    setBulkBusy(true);
+    let processed = 0;
+    let next = data!;
+    const method = changes ? "PUT" : "DELETE";
+    try {
+      for (let offset = 0; offset < ids.length; offset += TRANSACTION_BATCH_LIMIT) {
+        const entry_ids = ids.slice(offset, offset + TRANSACTION_BATCH_LIMIT);
+        const payload = { entry_ids, ...(changes ? { changes } : {}) };
+        if (demo) next = mutateDemo(next, "transactions", method, payload);
+        else await request("/api/records/transactions", { method, body: JSON.stringify(payload) });
+        processed += entry_ids.length;
+      }
+      setToast(changes ? "Alterações em lote salvas." : "Lançamentos selecionados excluídos.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Não foi possível concluir a operação.";
+      throw new Error(processed ? `${processed} lançamentos processados. ${message}` : message);
+    } finally {
+      if (demo) setData(next);
+      else await load({ background: true });
+      const processedIds = new Set(ids.slice(0, processed));
+      setSelectedEntryIds((current) => new Set([...current].filter((id) => !processedIds.has(id))));
+      setBulkBusy(false);
+    }
+  }
   const askDelete = (
     entity: Entity,
     row: { id: string },
@@ -558,13 +606,15 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
       );
     }
   }
-  const visibleEntries = useMemo(
-    () =>
-      data?.transactions
+  const visibleEntries = useMemo(() => {
+    const months = new Set(ledgerMonths.length ? ledgerMonths : [month]);
+    return data?.transactions
         .filter(
           (e) =>
             e.status !== "cancelled" &&
-            e.date.startsWith(month) &&
+            (ledgerRange
+              ? e.date >= ledgerRange.start && e.date <= ledgerRange.end
+              : months.has(e.date.slice(0, 7))) &&
             (!accountFilter ||
               e.source_account_id === accountFilter ||
               e.target_account_id === accountFilter) &&
@@ -579,9 +629,28 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
             b.date.localeCompare(a.date) ||
             (b.created_at ?? "").localeCompare(a.created_at ?? "") ||
             b.id.localeCompare(a.id),
-        ) ?? [],
-    [data, month, kind, status, search, accountFilter],
-  );
+        ) ?? [];
+  }, [data, month, ledgerMonths, ledgerRange, kind, status, search, accountFilter]);
+  const selectedVisibleIds = visibleEntries.filter((entry) => selectedEntryIds.has(entry.id)).map((entry) => entry.id);
+  const allVisibleSelected = visibleEntries.length > 0 && selectedVisibleIds.length === visibleEntries.length;
+  const activeLedgerMonths = ledgerMonths.length ? ledgerMonths : [month];
+  const invalidLedgerRange = Boolean(ledgerRangeDraft?.start && ledgerRangeDraft.end && ledgerRangeDraft.start > ledgerRangeDraft.end);
+  const monthOptions = screen === "transactions" ? [...new Set([
+    month,
+    ...ledgerMonths,
+    ...(data?.transactions.filter((entry) => entry.status !== "cancelled").map((entry) => entry.date.slice(0, 7)) ?? []),
+  ])].sort().reverse() : [];
+
+  function toggleVisibleEntries(ids: string[], selected: boolean) {
+    setSelectedEntryIds((current) => {
+      const next = new Set(current);
+      for (const id of ids) {
+        if (selected) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
   if (!data)
     return (
       <main className="loading-page">
@@ -626,12 +695,18 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
         (b.created_at ?? "").localeCompare(a.created_at ?? "") ||
         b.id.localeCompare(a.id),
     );
-  const report = buildMonthlyReport(data, month, asOf, {
+  const report = screen === "reports" ? buildMonthlyReport(data, month, asOf, {
     horizon: reportHorizon,
     accountId: reportAccount,
-  });
-  const reportPeriodKeys = new Set(report.periods.map((p) => p.key));
-  const reportPeriodEntries = data.transactions
+  }) : null;
+  const reviewMonth = retrospectiveMonth(month, asOf);
+  const latestReviewMonth = retrospectiveMonth(asOf.slice(0, 7), asOf);
+  const reviewReport = reviewSelection
+    ? buildMonthlyReport(data, reviewSelection.month, asOf, { accountId: reviewSelection.accountId })
+    : null;
+  const reportPercent = (ratio: number) => hidden ? "•••••" : percent(ratio);
+  const reportPeriodKeys = new Set(report?.periods.map((p) => p.key));
+  const reportPeriodEntries = report ? data.transactions
     .filter(
       (e) =>
         e.status !== "cancelled" &&
@@ -645,14 +720,10 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
         b.date.localeCompare(a.date) ||
         (b.created_at ?? "").localeCompare(a.created_at ?? "") ||
         b.id.localeCompare(a.id),
-    );
+    ) : [];
   const nameOf = (id: string | null) =>
     data.accounts.find((a) => a.id === id)?.name ?? "—";
   const totalCategories = sumCents(categories.map((c) => c.value));
-  const netCaption =
-    stats.result >= 0
-      ? "Você recebeu mais do que gastou."
-      : "As despesas superaram as receitas.";
   const planning = (() => {
     try {
       return {
@@ -696,7 +767,12 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
     const url = URL.createObjectURL(blob),
       a = document.createElement("a");
     a.href = url;
-    a.download = `lancamentos-${month}.csv`;
+    const period = entries === visibleEntries
+      ? ledgerRange
+        ? `${ledgerRange.start}_a_${ledgerRange.end}`
+        : ledgerMonths.length > 1 ? "periodo" : (ledgerMonths[0] ?? month)
+      : month;
+    a.download = `lancamentos-${period}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -826,6 +902,9 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                 setKind("all");
                 setStatus("all");
                 setSearch("");
+                setLedgerMonths([]);
+                setLedgerRange(null);
+                setLedgerRangeDraft(null);
                 setMonth(
                   data.transactions
                     .filter(
@@ -893,6 +972,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
       })()
     : [];
   function entryList(entries: Entry[], compact = false) {
+    const selectable = screen === "transactions";
     return entries.length ? (
       <div className="entry-list">
         {entries.map((entry) => {
@@ -906,6 +986,16 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   : TrendingUp;
           return (
             <div className="entry-row" key={entry.id}>
+              {selectable && (
+                <input
+                  className="ledger-entry-check"
+                  type="checkbox"
+                  aria-label={`Selecionar lançamento ${entry.description}`}
+                  checked={selectedEntryIds.has(entry.id)}
+                  disabled={bulkBusy}
+                  onChange={(e) => toggleVisibleEntries([entry.id], e.target.checked)}
+                />
+              )}
               <span className={`entry-icon ${entry.kind}`}>
                 <Icon size={19} />
               </span>
@@ -952,7 +1042,9 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     {entryStatusLabel(entry)}
                   </span>
                   {" · "}
-                  {formatDate(entry.date).slice(0, 5)}
+                  {selectable && (ledgerRange || activeLedgerMonths.length > 1)
+                    ? formatDate(entry.date)
+                    : formatDate(entry.date).slice(0, 5)}
                 </span>
                 {isPaidEarly(entry) && (
                   <small className="entry-due">
@@ -1249,6 +1341,15 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   } else go("transactions");
                 }}
               />
+              <button
+                type="button"
+                className="button secondary overview-retrospective"
+                onClick={() => setReviewSelection({ month: latestReviewMonth, accountId: "" })}
+              >
+                <FileChartColumn size={16} aria-hidden="true" />
+                Retrospectiva de {monthLabel(latestReviewMonth)}
+                <ChevronRight size={16} aria-hidden="true" />
+              </button>
               <div className="summary-grid">
                 <section className="balance-hero">
                   <div className="hero-top">
@@ -1357,53 +1458,43 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   </section>
                 </div>
               </div>
-              <div className="overview-metrics">
-                <span>
-                  <i className="dot accent" />
-                  Resultado de {monthLabel(month)}{" "}
-                  <strong
-                    className={stats.result >= 0 ? "positive" : "negative"}
-                  >
-                    {value(stats.result)}
-                  </strong>
-                </span>
-                <span>
-                  Disponível em contas líquidas{" "}
-                  <strong>{value(stats.liquid)}</strong>
-                </span>
-                <span>
-                  VA/VR separado <strong>{value(stats.benefits)}</strong>
-                </span>
+              <dl className="overview-metrics" aria-label="Indicadores complementares">
+                <div>
+                  <dt>Resultado do mês</dt>
+                  <dd>
+                    <strong className={stats.result >= 0 ? "positive" : "negative"}>{value(stats.result)}</strong>
+                    <small>{monthLabel(month)}</small>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Contas líquidas</dt>
+                  <dd><strong>{value(stats.liquid)}</strong><small>Saldo disponível</small></dd>
+                </div>
+                <div>
+                  <dt>VA/VR separado</dt>
+                  <dd><strong>{value(stats.benefits)}</strong></dd>
+                </div>
                 {stats.overdraftLimit > 0 && (
-                  <span>
-                    {stats.overdraftUsed > 0 ? (
-                      <>
-                        Cheque especial em uso{" "}
-                        <strong className="negative">
-                          {value(stats.overdraftUsed)}
-                        </strong>{" "}
-                        (restam {value(stats.overdraftAvailable)})
-                      </>
-                    ) : (
-                      <>
-                        Cheque especial disponível{" "}
-                        <strong>{value(stats.overdraftAvailable)}</strong>
-                      </>
-                    )}
-                  </span>
+                  <div>
+                    <dt>Cheque especial</dt>
+                    <dd>
+                      <strong className={stats.overdraftUsed > 0 ? "negative" : undefined}>
+                        {value(stats.overdraftUsed > 0 ? stats.overdraftUsed : stats.overdraftAvailable)}
+                      </strong>
+                      <small>{stats.overdraftUsed > 0 ? `Em uso · restam ${value(stats.overdraftAvailable)}` : "Disponível"}</small>
+                    </dd>
+                  </div>
                 )}
                 {stats.creditCardLimit > 0 && (
-                  <span>
-                    Fatura cartões ({monthLabel(month).split(" ")[0]}){" "}
-                    <strong
-                      className={stats.creditCardInvoice > 0 ? "negative" : ""}
-                    >
-                      {value(stats.creditCardInvoice)}
-                    </strong>{" "}
-                    (limite livre {value(stats.creditCardAvailable)})
-                  </span>
+                  <div>
+                    <dt>Fatura de {monthLabel(month).split(" ")[0]}</dt>
+                    <dd>
+                      <strong className={stats.creditCardInvoice > 0 ? "negative" : undefined}>{value(stats.creditCardInvoice)}</strong>
+                      <small>Limite livre {value(stats.creditCardAvailable)}</small>
+                    </dd>
+                  </div>
                 )}
-              </div>
+              </dl>
               <div className="two-column">
                 <section className="panel">
                   <div className="section-head">
@@ -1423,13 +1514,11 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                       <ArrowUpRight size={20} />
                     </button>
                   </div>
-                  <FinanceChart
+                  <MonthlyCashFlowChart
+                    key={month}
                     hideValues={hidden}
-                    labels={periods.map((p) => p.label)}
-                    primary={periods.map((p) => p.income)}
-                    secondary={periods.map((p) => p.expense)}
+                    periods={periods}
                   />
-                  <p className="chart-note">Valores em reais · {netCaption}</p>
                 </section>
                 <section className="panel">
                   <div className="section-head">
@@ -1607,6 +1696,62 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                       onChange={(e) => setSearch(e.target.value)}
                     />
                   </label>
+                  <details className="ledger-months">
+                    <summary className="button secondary">
+                      <CalendarClock size={16} />
+                      {ledgerRange
+                        ? `${formatDate(ledgerRange.start)} a ${formatDate(ledgerRange.end)}`
+                        : ledgerMonths.length === 1 ? monthLabel(ledgerMonths[0]) : `Meses (${activeLedgerMonths.length})`}
+                    </summary>
+                    <div className="ledger-period-panel" role="group" aria-label="Filtrar período dos lançamentos">
+                      <div className="ledger-period-header">
+                        <div className="segmented ledger-period-modes">
+                          <button type="button" aria-pressed={!ledgerRangeDraft} className={!ledgerRangeDraft ? "selected" : ""} onClick={() => {
+                            setLedgerRange(null);
+                            setLedgerRangeDraft(null);
+                          }}>Meses</button>
+                          <button type="button" aria-pressed={Boolean(ledgerRangeDraft)} className={ledgerRangeDraft ? "selected" : ""} onClick={() => {
+                            setLedgerRangeDraft((draft) => draft ?? ledgerRange ?? { start: "", end: "" });
+                          }}>Intervalo de datas</button>
+                        </div>
+                        <button type="button" className="icon-button" aria-label="Fechar filtro de período" onClick={(event) => closeLedgerPeriodMenu(event.currentTarget.closest("details"))}>
+                          <X size={16} />
+                        </button>
+                      </div>
+                      {ledgerRangeDraft ? (
+                        <form className="ledger-range-form" onSubmit={(event) => {
+                          event.preventDefault();
+                          if (!ledgerRangeDraft.start || !ledgerRangeDraft.end || invalidLedgerRange) return;
+                          setLedgerRange(ledgerRangeDraft);
+                          closeLedgerPeriodMenu(event.currentTarget.closest("details"));
+                        }}>
+                          <div className="form-field">
+                            <span>Data inicial</span>
+                            <DateControl label="Data inicial" value={ledgerRangeDraft.start} onChange={(start) => setLedgerRangeDraft({ ...ledgerRangeDraft, start })} />
+                          </div>
+                          <div className="form-field">
+                            <span>Data final</span>
+                            <DateControl label="Data final" value={ledgerRangeDraft.end} onChange={(end) => setLedgerRangeDraft({ ...ledgerRangeDraft, end })} />
+                          </div>
+                          {invalidLedgerRange && <p className="form-error" role="alert">A data final deve ser igual ou posterior à inicial.</p>}
+                          <button type="submit" className="button primary" disabled={!ledgerRangeDraft.start || !ledgerRangeDraft.end || invalidLedgerRange}>Aplicar intervalo</button>
+                        </form>
+                      ) : (
+                        <div className="ledger-month-options" role="group" aria-label="Filtrar meses dos lançamentos">
+                          {monthOptions.map((option) => (
+                            <label className="ledger-month-option" key={option}>
+                              <input type="checkbox" checked={activeLedgerMonths.includes(option)} onChange={(event) => {
+                                setLedgerMonths(event.target.checked
+                                  ? [...activeLedgerMonths, option]
+                                  : activeLedgerMonths.filter((value) => value !== option));
+                              }} />
+                              {monthLabel(option)}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </details>
                   <div className="filter-select">
                     <SelectControl
                       label="Filtrar situação"
@@ -1628,6 +1773,60 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     CSV
                   </button>
                 </div>
+                {visibleEntries.length > 0 && (
+                  <div className="ledger-selection">
+                    <button type="button" className="text-button" disabled={bulkBusy} onClick={() =>
+                      toggleVisibleEntries(visibleEntries.map((entry) => entry.id), !allVisibleSelected)
+                    }>
+                      {allVisibleSelected ? "Desmarcar visíveis" : "Selecionar visíveis"}
+                    </button>
+                    {selectedVisibleIds.length > 0 && (
+                      <>
+                        <span className="muted">{selectedVisibleIds.length} selecionados</span>
+                        <button type="button" className="button secondary" disabled={bulkBusy} onClick={() =>
+                          setBulkEdit({ description: "", category: "" })
+                        }><Pencil size={15} /> Editar selecionados</button>
+                        <button type="button" className="button secondary" disabled={bulkBusy} onClick={() => setBulkRemove(selectedVisibleIds)}>
+                          <Trash2 size={15} /> Excluir selecionados
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                {bulkEdit && selectedVisibleIds.length > 0 && (
+                  <form className="ledger-bulk-edit" onSubmit={async (event) => {
+                    event.preventDefault();
+                    const description = bulkEdit.description.trim();
+                    const category = bulkEdit.category.trim();
+                    if (!description && !category) return;
+                    try {
+                      await mutateSelectedEntries(selectedVisibleIds, {
+                        ...(description ? { description } : {}),
+                        ...(category ? { category } : {}),
+                      });
+                      setBulkEdit(null);
+                    } catch (err) {
+                      setToast(err instanceof Error ? err.message : "Não foi possível salvar as alterações.");
+                    }
+                  }}>
+                    <p className="muted">Os campos preenchidos serão aplicados a todos os lançamentos selecionados.</p>
+                    <label className="form-field">
+                      <span>Nova descrição</span>
+                      <input maxLength={140} value={bulkEdit.description} onChange={(e) =>
+                        setBulkEdit({ ...bulkEdit, description: e.target.value })
+                      } />
+                    </label>
+                    <CategoryInput label="Nova categoria" required={false} entries={data.transactions} value={bulkEdit.category} onChange={(category) =>
+                      setBulkEdit({ ...bulkEdit, category })
+                    } />
+                    <div className="button-row">
+                      <button type="button" className="button secondary" disabled={bulkBusy} onClick={() => setBulkEdit(null)}>Cancelar</button>
+                      <button type="submit" className="button primary" disabled={bulkBusy || (!bulkEdit.description.trim() && !bulkEdit.category.trim())}>
+                        {bulkBusy ? "Salvando…" : "Aplicar alterações"}
+                      </button>
+                    </div>
+                  </form>
+                )}
                 {entryList(visibleEntries)}
                 <div className="list-footer">
                   <span>{visibleEntries.length} lançamentos encontrados</span>
@@ -2942,7 +3141,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
               onCreateGoal={(preset) => newRecord("goals", preset)}
             />
           )}
-          {screen === "reports" && (
+          {screen === "reports" && report && (
             <>
               <div className="toolbar reports-toolbar">
                 <div
@@ -2968,7 +3167,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     value={reportAccount}
                     onChange={setReportAccount}
                     options={[
-                      ["", "Todas as contas (sem benefícios)"],
+                      ["", "Caixa geral (sem VA/VR e cartões)"],
                       ...data.accounts
                         .filter((a) => a.kind !== "credit_card")
                         .map((a): [string, string] => [a.id, a.name]),
@@ -2976,61 +3175,16 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   />
                 </div>
               </div>
-              <div className="report-stats report-stats-four">
-                <section className="stat-card">
-                  <p>Entradas realizadas</p>
-                  <strong>{value(report.current.income)}</strong>
-                  <small>
-                    {report.previous.income > 0
-                      ? `${report.deltas.incomeDiff >= 0 ? "+" : "−"}${value(Math.abs(report.deltas.incomeDiff))} vs. ${monthLabel(report.previousMonth).split(" ")[0]}`
-                      : reportAccount
-                        ? nameOf(reportAccount)
-                        : "Benefícios separados"}{" "}
-                    · Média {value(report.averages.income)}
-                  </small>
-                </section>
-                <section className="stat-card">
-                  <p>Saídas realizadas</p>
-                  <strong>{value(report.current.expense)}</strong>
-                  <small>
-                    {report.previous.expense > 0
-                      ? `${report.deltas.expenseDiff >= 0 ? "+" : "−"}${value(Math.abs(report.deltas.expenseDiff))} vs. ${monthLabel(report.previousMonth).split(" ")[0]}`
-                      : "Transferências excluídas"}{" "}
-                    · Média {value(report.averages.expense)}
-                  </small>
-                </section>
-                <section className="stat-card">
-                  <p>Resultado do mês</p>
-                  <strong
-                    className={
-                      report.current.result >= 0 ? "positive" : "negative"
-                    }
-                  >
-                    {value(report.current.result)}
-                  </strong>
-                  <small>
-                    {monthLabel(month)} · Média {value(report.averages.result)}
-                  </small>
-                </section>
-                <section className="stat-card">
-                  <p>Economia e metas</p>
-                  <strong
-                    className={
-                      (report.current.savingsRate ?? 0) >= 0.1
-                        ? "positive"
-                        : ""
-                    }
-                  >
-                    {report.current.savingsRate !== null
-                      ? percent(Math.max(0, report.current.savingsRate))
-                      : "0%"}
-                  </strong>
-                  <small>
-                    da renda preservada · Guardado:{" "}
-                    {value(report.current.savedInMonth)}
-                  </small>
-                </section>
-              </div>
+              <MonthlyReportReading
+                report={report}
+                asOf={asOf}
+                hidden={hidden}
+                reviewMonth={reviewMonth}
+                onReview={() => {
+                  setMonth(reviewMonth);
+                  setReviewSelection({ month: reviewMonth, accountId: reportAccount });
+                }}
+              />
               <div className="two-column">
                 <section
                   className="panel scroll-destination"
@@ -3085,14 +3239,18 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                           />
                         </div>
                         <div className="category-meta">
-                          <small>{percent(c.share)}</small>
+                          <small>{reportPercent(c.share)}</small>
                           <button
                             type="button"
                             className="link-button"
                             onClick={() => {
                               setSearch(c.name);
                               setKind("expense");
-                              if (reportAccount) setAccountFilter(reportAccount);
+                              setStatus("posted");
+                              setAccountFilter(reportAccount);
+                              setLedgerMonths([]);
+                              setLedgerRange(null);
+                              setLedgerRangeDraft(null);
                               go("transactions");
                             }}
                           >
@@ -3166,7 +3324,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                             </span>
                             <strong>{value(report.current.fixedExpense)}</strong>
                             <small>
-                              {percent(fixedShare)} do movimento · Recorrências e
+                              {reportPercent(fixedShare)} do movimento · Recorrências e
                               dívidas
                             </small>
                           </div>
@@ -3179,23 +3337,22 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                               {value(report.current.variableExpense)}
                             </strong>
                             <small>
-                              {percent(variableShare)} do movimento · Compras e
+                              {reportPercent(variableShare)} do movimento · Compras e
                               avulsos
                             </small>
                           </div>
                           <div className="xray-item">
                             <span>
                               <i className="category-dot cat-1" />
-                              Sobra livre no mês
+                              {report.current.result < 0 ? "Déficit do mês" : "Sobra no mês"}
                             </span>
                             <strong
-                              className={surplus > 0 ? "positive" : undefined}
+                              className={report.current.result < 0 ? "negative" : surplus > 0 ? "positive" : undefined}
                             >
-                              {value(surplus)}
+                              {value(report.current.result)}
                             </strong>
                             <small>
-                              {percent(surplusShare)} preservado · Guardado em
-                              metas: {value(report.current.savedInMonth)}
+                              Aportes a metas · {value(report.current.savedInMonth)}
                             </small>
                           </div>
                         </div>
@@ -3265,7 +3422,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                           <div className="income-source-chip" key={inc.name}>
                             <span>{inc.name}</span>
                             <strong>{value(inc.value)}</strong>
-                            <small>{percent(inc.share)}</small>
+                            <small>{reportPercent(inc.share)}</small>
                           </div>
                         ))}
                       </div>
@@ -3273,17 +3430,12 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                   )}
                 </section>
               </div>
-              <section className="panel" aria-label="Balanço por conta">
-                <div className="section-head">
-                  <div>
-                    <h2>Balanço por conta</h2>
-                    <p>
-                      Movimentação em {monthLabel(month)} e saldo atual de cada
-                      conta.
-                    </p>
-                  </div>
-                </div>
-                <div className="table-scroll">
+              <details className="panel report-details">
+                <summary>Balanço por conta</summary>
+                <section aria-label="Balanço por conta">
+                <p className="muted">Movimentação de {monthLabel(month)} e saldos atuais.</p>
+                <MobileAccountRows accounts={report.accountSummaries} value={value} />
+                <div className="table-scroll report-desktop-table">
                   <table>
                     <thead>
                       <tr>
@@ -3324,18 +3476,12 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     </tbody>
                   </table>
                 </div>
-              </section>
-              <section className="panel">
-                <div className="section-head">
-                  <div>
-                    <h2>Fechamento por mês</h2>
-                    <p>
-                      Histórico dos últimos {reportHorizon} meses com taxa de
-                      economia e reservas.
-                    </p>
-                  </div>
-                </div>
-                <div className="table-scroll">
+                </section>
+              </details>
+              <details className="panel report-details">
+                <summary>Histórico dos últimos {reportHorizon} meses</summary>
+                <MobileHistoryRows periods={report.periods} currentMonth={asOf.slice(0, 7)} value={value} ratioLabel={reportPercent} />
+                <div className="table-scroll report-desktop-table">
                   <table>
                     <thead>
                       <tr>
@@ -3343,20 +3489,20 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                         <th>Receitas</th>
                         <th>Despesas</th>
                         <th>Guardado em metas</th>
-                        <th>% Poupado</th>
+                        <th>Margem</th>
                         <th>Resultado</th>
                       </tr>
                     </thead>
                     <tbody>
                       {report.periods.map((p) => (
                         <tr key={p.key}>
-                          <td>{monthLabel(p.key)}</td>
+                          <td>{monthLabel(p.key)}{p.key === asOf.slice(0, 7) && <small className="muted"> · Em andamento</small>}</td>
                           <td>{value(p.income)}</td>
                           <td>{value(p.expense)}</td>
                           <td>{value(p.savedInMonth)}</td>
                           <td>
                             {p.savingsRate !== null
-                              ? percent(Math.max(0, p.savingsRate))
+                              ? reportPercent(p.savingsRate)
                               : "—"}
                           </td>
                           <td
@@ -3377,7 +3523,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                 <div className="button-row">
                   <button
                     className="button secondary"
-                    onClick={() => downloadCSV(monthlyEntries)}
+                    onClick={() => downloadCSV(reportPeriodEntries.filter((entry) => entry.date.startsWith(month)))}
                   >
                     <Download size={16} />
                     Baixar lançamentos de {monthLabel(month)} (CSV)
@@ -3390,7 +3536,7 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
                     Exportar período ({reportHorizon} meses) (CSV)
                   </button>
                 </div>
-              </section>
+              </details>
             </>
           )}
           {screen === "settings" && preferences && (
@@ -3735,32 +3881,23 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
           onSubmit={save}
         />
       )}
-      <input
-        ref={quickImportInputRef}
-        type="file"
-        accept={STATEMENT_FILE_ACCEPT}
-        aria-label="Escolher arquivo de extrato ou fatura do dispositivo"
-        style={{ display: "none" }}
-        onChange={(e) => {
-          const picked = e.target.files?.[0];
-          if (picked) {
-            setImportModal((prev) => ({
-              ...(prev ?? { invoiceMonth: month }),
-              initialFile: picked,
-            }));
-          }
-          e.target.value = "";
-        }}
-      />
       {importModal && (
         <StatementImportModal
           data={data}
           initialAccountId={importModal.accountId}
           initialMonth={importModal.invoiceMonth ?? month}
-          initialFile={importModal.initialFile}
           onClose={() => setImportModal(null)}
           onSubmit={save}
           onSuccess={(msg) => setToast(msg)}
+        />
+      )}
+      {reviewSelection && reviewReport && (
+        <MonthlyRetrospective
+          key={reviewReport.month}
+          report={reviewReport}
+          hidden={hidden}
+          scope={reviewSelection.accountId ? nameOf(reviewSelection.accountId) : "Contas sem VA/VR e cartões"}
+          onClose={() => setReviewSelection(null)}
         />
       )}
       {remove && (
@@ -3769,6 +3906,13 @@ export default function FinanceApp({ demo }: { demo: boolean }) {
           onClose={() => setRemove(null)}
           onConfirm={deleteRecord}
           links={dependencies}
+        />
+      )}
+      {bulkRemove && (
+        <ConfirmDialog
+          label={bulkRemove.length === 1 ? "1 lançamento selecionado" : `${bulkRemove.length} lançamentos selecionados`}
+          onClose={() => setBulkRemove(null)}
+          onConfirm={() => mutateSelectedEntries(bulkRemove)}
         />
       )}
       {toast && (

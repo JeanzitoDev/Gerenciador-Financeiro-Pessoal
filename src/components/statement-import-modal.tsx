@@ -28,6 +28,8 @@ import {
   type StatementPreviewItem,
 } from "@/lib/finance/statement-import";
 import { PdfImportError, readBankPdf } from "@/lib/finance/pdf-reader";
+import { APP_VERSION } from "@/lib/version";
+import { DEFAULT_CATEGORIES } from "./category-input";
 import SelectControl from "./select-control";
 import { MonthControl } from "./date-control";
 
@@ -35,25 +37,13 @@ export const STATEMENT_MAX_PDF_BYTES = 10 * 1024 * 1024;
 export const STATEMENT_MAX_TEXT_BYTES = 5 * 1024 * 1024;
 export const STATEMENT_IMPORT_CHUNK_SIZE = 75;
 
-export const STATEMENT_FILE_ACCEPT =
+const STATEMENT_FILE_ACCEPT =
   "image/*,application/pdf,text/csv,text/plain,application/vnd.ms-excel,application/x-ofx,.ofx,.qfx,.csv,.tsv,.txt,.pdf,*/*";
 
-const DEFAULT_CATEGORIES = [
-  "Alimentação",
-  "Transporte",
-  "Moradia",
-  "Saúde",
-  "Assinaturas",
-  "Educação",
-  "Lazer",
-  "Compras",
-  "Salário",
-  "Benefícios",
-  "Investimentos",
-  "Empréstimos e financiamentos",
-  "Fatura de cartão",
-  "Outros",
-];
+const isDuplicate = (item: StatementPreviewItem) =>
+  item.duplicateStatus === "exact_duplicate" || item.duplicateStatus === "manual_match";
+const isTransferCandidate = (item: StatementPreviewItem) =>
+  !isDuplicate(item) && Boolean(item.transferSuggestion || item.transferAccountId);
 
 const FALLBACK_CHECKING_ACCOUNT: Account = {
   id: "__fallback_checking__",
@@ -80,7 +70,6 @@ export interface StatementImportModalProps {
   data: FinanceData;
   initialAccountId?: string;
   initialMonth?: string;
-  initialFile?: File | null;
   onClose: () => void;
   onSubmit: (
     entity: Entity,
@@ -94,7 +83,6 @@ export default function StatementImportModal({
   data,
   initialAccountId,
   initialMonth,
-  initialFile,
   onClose,
   onSubmit,
   onSuccess,
@@ -128,7 +116,7 @@ export default function StatementImportModal({
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string>("");
   const [rawText, setRawText] = useState<string>("");
   const [items, setItems] = useState<StatementPreviewItem[]>([]);
-  const [filterTab, setFilterTab] = useState<"all" | "selected" | "ignored">(
+  const [filterTab, setFilterTab] = useState<"all" | "selected" | "ignored" | "transfers" | "duplicates">(
     "all",
   );
   const [busy, setBusy] = useState(false);
@@ -182,6 +170,7 @@ export default function StatementImportModal({
     targetAccount.id === FALLBACK_CHECKING_ACCOUNT.id ||
     targetAccount.id === FALLBACK_CARD_ACCOUNT.id;
   const isCreditCard = targetAccount.kind === "credit_card";
+  const canReviewTransfers = !isCreditCard && targetAccount.kind !== "benefit";
   const sourceType = useMemo(() => detectStatementDocumentType(rawText), [rawText]);
   const sourceMismatch =
     (sourceType === "bank" && isCreditCard) ||
@@ -204,11 +193,12 @@ export default function StatementImportModal({
     if (pdfPasswordInputRef.current) pdfPasswordInputRef.current.value = "";
     setRawText("");
     setItems([]);
+    setFilterTab("all");
+    setFileName("");
     setImagePreviewUrl((previous) => {
       if (previous) URL.revokeObjectURL(previous);
       return "";
     });
-    setFileName(file.name);
     const lower = file.name.toLowerCase();
     const isImage =
       file.type.startsWith("image/") ||
@@ -229,6 +219,7 @@ export default function StatementImportModal({
       setError("Formato não reconhecido. Use OFX, QFX, CSV, TSV, TXT ou PDF.");
       return;
     }
+    setFileName(file.name);
 
     if (isImage) {
       const url = URL.createObjectURL(file);
@@ -321,12 +312,6 @@ export default function StatementImportModal({
     }
   }, [protectedPdf, unlockingPdf]);
 
-  useEffect(() => {
-    if (initialFile) {
-      void handleFileUpload(initialFile);
-    }
-  }, [initialFile, handleFileUpload]);
-
   // Re-run preview whenever rawText, targetAccount, or invoiceMonth changes
   useEffect(() => {
     if (!rawText.trim() || !targetAccount || sourceMismatch || rawText.length > STATEMENT_MAX_TEXT_BYTES) {
@@ -355,12 +340,17 @@ export default function StatementImportModal({
   ]);
 
   const summary = useMemo(() => computeImportSummary(items), [items]);
+  const transferCandidates = useMemo(() => items.filter(isTransferCandidate), [items]);
+  const duplicates = useMemo(() => items.filter(isDuplicate), [items]);
 
   const filteredItems = useMemo(() => {
     if (filterTab === "selected") return items.filter((i) => i.selected);
     if (filterTab === "ignored") return items.filter((i) => !i.selected);
+    if (filterTab === "transfers") return transferCandidates;
+    if (filterTab === "duplicates") return duplicates;
     return items;
-  }, [items, filterTab]);
+  }, [items, filterTab, transferCandidates, duplicates]);
+  const hasSelectedBeforeOpening = items.some((item) => item.selected && item.date < targetAccount.opening_date);
 
   async function handleQuickCreateAccount(kind: "checking" | "credit_card") {
     setCreatingAccount(true);
@@ -397,6 +387,7 @@ export default function StatementImportModal({
   }
 
   function handleLoadSample() {
+    setFilterTab("all");
     const sample = isCreditCard
       ? sampleCreditCardInvoiceText(invoiceMonth)
       : sampleBankStatementText(invoiceMonth);
@@ -435,7 +426,7 @@ export default function StatementImportModal({
   function toggleAllNew(select: boolean) {
     setItems((prev) =>
       prev.map((item) =>
-        item.duplicateStatus === "new" ? { ...item, selected: select } : item,
+        !select || item.duplicateStatus === "new" ? { ...item, selected: select } : item,
       ),
     );
   }
@@ -549,7 +540,7 @@ export default function StatementImportModal({
     >
       <div className="dialog-head">
         <div>
-          <p className="eyebrow">Importação inteligente · v3.0.4</p>
+          <p className="eyebrow">Importação inteligente · v{APP_VERSION}</p>
           <h2>Importar extrato ou fatura</h2>
         </div>
         <button
@@ -605,7 +596,10 @@ export default function StatementImportModal({
                 label="Conta ou cartão de destino"
                 allowEmpty={false}
                 value={accountId}
-                onChange={setAccountId}
+                onChange={(id) => {
+                  setAccountId(id);
+                  setFilterTab("all");
+                }}
                 options={accountOptions}
               />
               <small>
@@ -746,14 +740,12 @@ export default function StatementImportModal({
                     ? `Arquivo carregado: ${fileName}`
                     : "Toque para abrir seus arquivos ou fotos (ou arraste aqui)"}
                 </strong>
-                <p className="muted">
-                  No computador abre o explorador de arquivos; no celular abre a
-                  opção de <strong>Fotos ou Arquivos</strong> para escolher{" "}
-                  <strong>.OFX</strong>, <strong>.CSV</strong>,{" "}
-                  <strong>.PDF</strong> ou <strong>print/foto</strong> de qualquer
-                  banco. Limites: PDFs e imagens até 10 MB; OFX, CSV e TXT até 5 MB.
-                  PDFs com senha podem ser desbloqueados aqui no aparelho. Arquivos escaneados podem exigir texto colado ou exportação OFX/CSV.
-                </p>
+                {!fileName && (
+                  <p className="muted">
+                    OFX, QFX, CSV, TSV e TXT até 5 MB. PDFs e imagens até 10 MB.
+                    PDFs com senha são abertos neste aparelho. Para prints e documentos escaneados, cole o texto ou use OFX/CSV.
+                  </p>
+                )}
               </div>
             </div>
             {readingPdf && <p className="muted" role="status">Lendo o PDF no seu aparelho...</p>}
@@ -868,15 +860,15 @@ export default function StatementImportModal({
         {items.length > 0 && (
           <div className="import-preview-section">
             {!isCreditCard && (
-              <div className="info-box" role="status">
-                <Info size={16} />
-                <span>
-                  <strong>Importação retroativa:</strong> o saldo inicial da conta deve ser o valor que havia no dia da abertura, antes dos movimentos importados. Importar períodos já incluídos nesse saldo pode contá-los duas vezes. O app não modifica a abertura automaticamente.
-                  {items.some((item) => item.selected && item.date < targetAccount.opening_date) && (
-                    <strong> Há itens anteriores à abertura ({formatDate(targetAccount.opening_date)}): ajuste a conta antes de confirmar.</strong>
-                  )}
-                </span>
-              </div>
+              <details className="import-guidance">
+                <summary>Saldo inicial e importação retroativa</summary>
+                <p>Use o saldo que a conta tinha antes dos movimentos importados. Períodos já incluídos no saldo inicial podem ser contados duas vezes.</p>
+              </details>
+            )}
+            {hasSelectedBeforeOpening && (
+              <p className="form-error" role="alert">
+                Há itens anteriores à abertura ({formatDate(targetAccount.opening_date)}). Revise a conta ou desmarque esses itens antes de importar.
+              </p>
             )}
             <div className="import-summary-bar">
               <div className="import-summary-badges">
@@ -925,26 +917,12 @@ export default function StatementImportModal({
               </div>
             </div>
 
-            {(summary.manualMatchCount > 0 ||
-              summary.exactDuplicateCount > 0) && (
-              <div className="info-box import-dedup-notice">
-                <Info size={16} />
-                <span>
-                  <strong>Proteção anti-duplicidade ativa:</strong> os itens
-                  que coincidem com gastos que você já registrou manualmente
-                  (mesmo valor e data próxima) ou que já foram importados
-                  antes vieram <strong>desmarcados por segurança</strong>. Se
-                  algum deles for realmente outra compra, basta marcar a
-                  caixinha correspondente.
-                </span>
-              </div>
-            )}
-
             <div className="import-filter-bar">
-              <div className="segmented">
+              <div className="segmented import-preview-tabs" role="group" aria-label="Filtrar prévia da importação">
                 <button
                   type="button"
                   className={filterTab === "all" ? "selected" : ""}
+                  aria-pressed={filterTab === "all"}
                   onClick={() => setFilterTab("all")}
                 >
                   Todos ({items.length})
@@ -952,6 +930,7 @@ export default function StatementImportModal({
                 <button
                   type="button"
                   className={filterTab === "selected" ? "selected" : ""}
+                  aria-pressed={filterTab === "selected"}
                   onClick={() => setFilterTab("selected")}
                 >
                   Selecionados ({summary.selectedCount})
@@ -959,9 +938,20 @@ export default function StatementImportModal({
                 <button
                   type="button"
                   className={filterTab === "ignored" ? "selected" : ""}
+                  aria-pressed={filterTab === "ignored"}
                   onClick={() => setFilterTab("ignored")}
                 >
                   Desmarcados ({items.length - summary.selectedCount})
+                </button>
+                {canReviewTransfers && (
+                  <button type="button" className={filterTab === "transfers" ? "selected" : ""}
+                    aria-pressed={filterTab === "transfers"} onClick={() => setFilterTab("transfers")}>
+                    Conferir transferências ({transferCandidates.length})
+                  </button>
+                )}
+                <button type="button" className={filterTab === "duplicates" ? "selected" : ""}
+                  aria-pressed={filterTab === "duplicates"} onClick={() => setFilterTab("duplicates")}>
+                  Duplicados ({duplicates.length})
                 </button>
               </div>
               <div className="button-row">
@@ -981,12 +971,19 @@ export default function StatementImportModal({
                 </button>
               </div>
             </div>
+            {filterTab === "transfers" && (
+              <p className="muted import-filter-hint">Transferências entre suas contas atualizam os dois saldos e ficam fora de receitas e despesas.</p>
+            )}
+            {filterTab === "duplicates" && duplicates.length > 0 && (
+              <p className="muted import-filter-hint">Duplicados começam desmarcados. Marque só se for outra movimentação.</p>
+            )}
 
             <div
-              className={`import-preview-list ${filteredItems.length <= 4 ? "is-compact-list" : ""}`}
+              className="import-preview-list"
               role="region"
               aria-label="Prévia dos lançamentos para importação"
             >
+              {filteredItems.length === 0 && <p className="muted" role="status">Nenhum lançamento neste filtro.</p>}
               {filteredItems.map((item) => {
                 const matchedTransfer = item.matchedEntry?.kind === "transfer";
                 const statusLabel =
@@ -1098,7 +1095,7 @@ export default function StatementImportModal({
                           {item.reviewReason} Escolha o tipo correto e marque o lançamento para importar.
                         </small>
                       )}
-                      {!isCreditCard && targetAccount.kind !== "benefit" &&
+                      {canReviewTransfers &&
                         (item.transferSuggestion || item.transferAccountId) && (
                         <div className="import-transfer-options">
                           <label className="checkbox-row">
@@ -1113,7 +1110,7 @@ export default function StatementImportModal({
                                   : "",
                               })}
                             />
-                            <span>É uma transferência entre minhas contas (não contar como receita/despesa)</span>
+                          <span>Transferência entre minhas contas</span>
                           </label>
                           {item.transferAccountId && (
                             <SelectControl
@@ -1178,7 +1175,7 @@ export default function StatementImportModal({
         <button
           type="button"
           className="button primary"
-          disabled={busy || summary.selectedCount === 0 || sourceMismatch || items.some((item) => item.selected && item.date < targetAccount.opening_date)}
+          disabled={busy || summary.selectedCount === 0 || sourceMismatch || hasSelectedBeforeOpening}
           onClick={() => void handleConfirmImport()}
         >
           {isCreditCard ? (

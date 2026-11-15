@@ -132,6 +132,41 @@ describe("fronteira HTTP e isolamento no servidor", () => {
     ).toBe(422);
     expect(client.from).not.toHaveBeenCalled();
   });
+  it("edita em lote somente descrição e categoria dos lançamentos do usuário", async () => {
+    const chain = {
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      neq: vi.fn().mockResolvedValue({ error: null }),
+    };
+    client.from.mockReturnValue(chain);
+    const entry_ids = [uid];
+    expect((await PUT(request("PUT", { entry_ids, changes: { amount_cents: 1 } }), context("transactions"))).status).toBe(422);
+    expect(chain.update).not.toHaveBeenCalled();
+    expect((await PUT(request("PUT", { entry_ids, changes: { category: " Mercado " } }), context("transactions"))).status).toBe(200);
+    expect(chain.update).toHaveBeenCalledWith({ category: "Mercado" });
+    expect(chain.eq).toHaveBeenCalledWith("user_id", uid);
+    expect(chain.in).toHaveBeenCalledWith("id", entry_ids);
+    expect(chain.neq).toHaveBeenCalledWith("status", "cancelled");
+  });
+  it("exclui lançamentos avulsos e cancela ocorrências recorrentes em lote", async () => {
+    const chain = {
+      delete: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      is: vi.fn().mockResolvedValue({ error: null }),
+      not: vi.fn().mockReturnThis(),
+      neq: vi.fn().mockResolvedValue({ error: null }),
+    };
+    client.from.mockReturnValue(chain);
+    expect((await DELETE(request("DELETE", { entry_ids: [uid] }), context("transactions"))).status).toBe(200);
+    expect(chain.is).toHaveBeenCalledWith("recurrence_id", null);
+    expect(chain.not).toHaveBeenCalledWith("recurrence_id", "is", null);
+    expect(chain.update).toHaveBeenCalledWith({ status: "cancelled" });
+    expect(chain.eq.mock.calls).toEqual([["user_id", uid], ["user_id", uid]]);
+    expect(chain.in.mock.calls).toEqual([["id", [uid]], ["id", [uid]]]);
+  });
   it("recusa JSON nulo ou array sem erro interno", async () => {
     expect((await PUT(request("PUT", null), context("accounts"))).status).toBe(
       400,

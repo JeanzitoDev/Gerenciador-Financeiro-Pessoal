@@ -22,7 +22,7 @@ import {
   overview,
   planGoals,
 } from "../src/lib/finance/engine";
-import { buildMonthlyReport } from "../src/lib/finance/reports";
+import { buildMonthlyReport, retrospectiveMonth } from "../src/lib/finance/reports";
 import { demoData, mutateDemo } from "../src/lib/demo";
 import { accountSchema } from "../src/lib/validation";
 import { today } from "../src/lib/finance/dates";
@@ -317,6 +317,42 @@ describe("fase 2.3.2 — aluguel de imóvel e cofrinho progressivo", () => {
     });
     expect(r12.periods).toHaveLength(12);
     expect(r12.accountSummaries).toHaveLength(1);
+  });
+
+  it("compara dias equivalentes no mês aberto e meses inteiros no fechamento", () => {
+    const data = demoData();
+    const account = data.accounts.find((candidate) => candidate.kind === "checking")!;
+    const expense = (date: string, category: string, amount_cents: number) => ({
+      ...data.transactions[0],
+      id: date,
+      kind: "expense" as const,
+      status: "posted" as const,
+      date,
+      category,
+      amount_cents,
+      source_account_id: account.id,
+      target_account_id: null,
+    });
+    data.transactions = [
+      expense("2026-10-05", "Mercado", 10000),
+      expense("2026-10-20", "Moradia", 80000),
+      expense("2026-11-07", "Mercado", 17000),
+      expense("2026-11-25", "Moradia", 70000),
+    ];
+    const partial = buildMonthlyReport(data, "2026-11", "2026-11-11");
+    expect(partial.comparison).toEqual({
+      through: "2026-10-11",
+      hasPreviousActivity: true,
+      expenseChange: { name: "Mercado", difference: 7000 },
+    });
+    expect(partial.deltas.expenseDiff).toBe(7000);
+    const closed = buildMonthlyReport(data, "2026-11", "2026-12-01");
+    expect(closed.comparison.through).toBeNull();
+    expect(closed.deltas.expenseDiff).toBe(-3000);
+    expect(closed.comparison.expenseChange).toEqual({ name: "Moradia", difference: -10000 });
+    expect(retrospectiveMonth("2026-11", "2026-11-30")).toBe("2026-10");
+    expect(retrospectiveMonth("2026-12", "2026-12-01")).toBe("2026-11");
+    expect(retrospectiveMonth("2027-01", "2027-01-01")).toBe("2026-12");
   });
 
   it("consome o limite do cheque especial quando a despesa paga ultrapassa o saldo inicial", () => {

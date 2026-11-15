@@ -279,6 +279,25 @@ describe("Conciliação de transferências entre Nubank e Itaú", () => {
   });
 });
 
+it("importa fatura CSV no cartão, ignora pagamento e projeta parcelas futuras", () => {
+  const card: Account = { ...account, kind: "credit_card", name: "Cartão", due_day: 10, closing_day: 3 };
+  const result = prepareImportPreview({
+    rawText: [
+      "date,category,title,amount",
+      "2026-10-04,compras,Loja Kit Cozinha 01/03,89.90",
+      "2026-10-08,pagamento,Pagamento recebido,-350.00",
+    ].join("\n"),
+    fileName: "fatura.csv",
+    targetAccount: card,
+    invoiceMonth: "2026-10",
+    existingEntries: [],
+  });
+  expect(result.summary).toMatchObject({ selectedCount: 1, invoicePaymentCount: 1 });
+  const batch = buildImportBatchPayload({ items: result.items, targetAccount: card, projectFutureInstallments: true });
+  expect(batch.map(({ date, amount_cents, source_account_id, status }) => [date, amount_cents, source_account_id, status]))
+    .toEqual(["2026-10-10", "2026-11-10", "2026-12-10"].map((date) => [date, 8990, card.id, "planned"]));
+});
+
 describe("Extrato de conta do Nubank com movimentações agrupadas", () => {
   const text = [
     "Saldo inicial 6,72",

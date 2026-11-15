@@ -3,7 +3,7 @@ import { loanSchedule } from "./finance/loans";
 import { today, addMonths } from "./finance/dates";
 import { balance, goalFunded, reserved } from "./finance/engine";
 import { recurrenceDates } from "./finance/recurrence";
-import { schemas, profileSchema } from "./validation";
+import { schemas, profileSchema, transactionBatchIdsSchema, transactionBatchChangesSchema } from "./validation";
 import { validateGoalGraph } from "./finance/goal-dependencies";
 import {
   formatCreditCardExternalId,
@@ -588,6 +588,24 @@ export function mutateDemo(
   payload: Record<string, unknown>,
 ): FinanceData {
   const next = structuredClone(data);
+  if (entity === "transactions" && method !== "POST" && Object.hasOwn(payload, "entry_ids")) {
+    const ids = new Set(transactionBatchIdsSchema.parse(payload.entry_ids));
+    if (method === "PUT") {
+      const changes = transactionBatchChangesSchema.parse(payload.changes);
+      next.transactions = next.transactions.map((entry) =>
+        ids.has(entry.id) && entry.status !== "cancelled" ? { ...entry, ...changes } : entry,
+      );
+    } else {
+      next.transactions = next.transactions.filter((entry) => {
+        if (!ids.has(entry.id)) return true;
+        if (!entry.recurrence_id) return false;
+        entry.status = "cancelled";
+        return true;
+      });
+    }
+    validateDemo(next);
+    return next;
+  }
   if (
     entity === "transactions" &&
     method === "DELETE" &&

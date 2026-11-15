@@ -1,6 +1,6 @@
 {
   "name": "meu-norte",
-  "version": "3.0.4",
+  "version": "3.0.7",
   "private": true,
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",

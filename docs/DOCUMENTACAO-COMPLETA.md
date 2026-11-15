@@ -224,7 +224,7 @@ Gerenciador-Financeiro-Pessoal/
 - **RF05.3 (Filtros e Busca):** filtragem por mês de competência, tipo de movimento, status (`posted` / `planned`), conta e busca textual por descrição ou categoria.
 
 ### RF06 — Importação Inteligente de Extratos e Faturas (`v3.0.2`)
-- **RF06.1 (Abertura Direta do Explorador / Galeria):** ao clicar em **"Importar extrato / fatura"**, o app aciona imediatamente o seletor nativo de arquivos do sistema operacional (Explorador de Arquivos no PC; opção de **Fotos ou Arquivos** no celular) e abre o modal de importação.
+- **RF06.1 — Seleção da conta e do arquivo.** Ao clicar em **"Importar extrato / fatura"**, o app abre o modal para selecionar a conta ou o cartão de destino. O seletor nativo só abre quando a pessoa solicita um arquivo.
 - **RF06.2 (Formatos Suportados):**
   - Arquivos `.OFX` e `.QFX` (extrato bancário e fatura de cartão no padrão Open Financial Exchange);
   - Arquivos `.CSV` e `.TXT` (separados por `;`, `,` ou tabulação, com detecção automática de colunas de data, descrição, valor e identificador);

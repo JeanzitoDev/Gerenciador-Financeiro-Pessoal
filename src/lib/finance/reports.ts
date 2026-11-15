@@ -45,6 +45,11 @@ export interface PeriodReportRow {
 export interface MonthlyReport {
   month: string;
   previousMonth: string;
+  comparison: {
+    through: string | null;
+    hasPreviousActivity: boolean;
+    expenseChange: { name: string; difference: number } | undefined;
+  };
   current: {
     income: number;
     expense: number;
@@ -179,6 +184,11 @@ function groupCategories(entries: Entry[]): ReportCategoryRow[] {
     .sort((a, b) => b.value - a.value);
 }
 
+export function retrospectiveMonth(month: string, asOf: string): string {
+  const currentMonth = asOf.slice(0, 7);
+  return month < currentMonth ? month : addMonths(`${currentMonth}-01`, -1).slice(0, 7);
+}
+
 export function buildMonthlyReport(
   data: FinanceData,
   month: string,
@@ -190,7 +200,16 @@ export function buildMonthlyReport(
   const previousMonth = addMonths(`${month}-01`, -1).slice(0, 7);
 
   const currentSummary = summarizeMonth(data, month, asOf, accountId);
-  const previousSummary = summarizeMonth(data, previousMonth, asOf, accountId);
+  const comparisonThrough = month === asOf.slice(0, 7) ? addMonths(asOf, -1) : null;
+  const previousSummary = summarizeMonth(data, previousMonth, comparisonThrough ?? asOf, accountId);
+  const expenseCategories = groupCategories(currentSummary.expenseEntries);
+  const previousCategories = groupCategories(previousSummary.expenseEntries);
+  const previousByName = new Map(previousCategories.map(({ name, value }) => [name, value]));
+  const currentByName = new Map(expenseCategories.map(({ name, value }) => [name, value]));
+  const expenseChange = [...new Set([...currentByName.keys(), ...previousByName.keys()])]
+    .map((name) => ({ name, difference: sumCents([currentByName.get(name) ?? 0, -(previousByName.get(name) ?? 0)]) }))
+    .sort((a, b) => Math.abs(b.difference) - Math.abs(a.difference) || a.name.localeCompare(b.name, "pt-BR"))
+    .find(({ difference }) => difference !== 0);
 
   const periods: PeriodReportRow[] = Array.from({ length: horizon }, (_, i) => {
     const key = addMonths(`${month}-01`, i - (horizon - 1)).slice(0, 7);
@@ -265,6 +284,11 @@ export function buildMonthlyReport(
   return {
     month,
     previousMonth,
+    comparison: {
+      through: comparisonThrough,
+      hasPreviousActivity: previousSummary.incomeEntries.length + previousSummary.expenseEntries.length > 0,
+      expenseChange,
+    },
     current: {
       income: currentSummary.income,
       expense: currentSummary.expense,
@@ -299,7 +323,7 @@ export function buildMonthlyReport(
     },
     averages,
     periods,
-    expenseCategories: groupCategories(currentSummary.expenseEntries),
+    expenseCategories,
     incomeCategories: groupCategories(currentSummary.incomeEntries),
     topExpenses,
     accountSummaries,

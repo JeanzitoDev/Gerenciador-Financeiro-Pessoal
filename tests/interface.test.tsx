@@ -27,8 +27,9 @@ import DateControl, { MonthControl } from "../src/components/date-control";
 import { useState } from "react";
 import MoneyInput from "../src/components/money-input";
 import Simulator from "../src/components/simulator";
-import { today, monthLabel } from "../src/lib/finance/dates";
+import { addMonths, formatDate, today, monthLabel } from "../src/lib/finance/dates";
 import RecordForm from "../src/components/record-form";
+import StatementImportModal from "../src/components/statement-import-modal";
 beforeAll(() => {
   Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
     value: function () {
@@ -1386,12 +1387,13 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
     expect(
       screen.getByRole("region", { name: "Maiores gastos do mês" }),
     ).toBeTruthy();
+    await user.click(screen.getByText("Balanço por conta", { selector: "summary" }));
     expect(
       screen.getByRole("region", { name: "Balanço por conta" }),
     ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Últimos 12 meses" }));
     expect(
-      screen.getByText(/Histórico dos últimos 12 meses/),
+      screen.getByText("Histórico dos últimos 12 meses", { selector: "summary" }),
     ).toBeTruthy();
   });
 
@@ -1499,20 +1501,19 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
     );
   });
 
-  it("permite importar extrato bancário ou fatura abrindo o explorador de arquivos / galeria e exibe a opção no tutorial (v3.0.0)", async () => {
+  it("abre o seletor de extrato somente após solicitação e permite revisar duplicados", async () => {
     const user = userEvent.setup();
     const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click");
     render(<FinanceApp demo />);
 
-    // Ao clicar em "Importar extrato / fatura", deve acionar imediatamente o input de arquivo nativo (PC: explorador de arquivos; Celular: Fotos ou Arquivos) e abrir o modal com showModal()
     const importButtons = screen.getAllByRole("button", {
       name: /Importar extrato \/ fatura/i,
     });
     await user.click(importButtons[0]);
-    expect(clickSpy).toHaveBeenCalled();
+    expect(clickSpy).not.toHaveBeenCalled();
 
     const quickFileInput = screen.getByLabelText(
-      "Escolher arquivo de extrato ou fatura do dispositivo",
+      "Selecionar arquivo de extrato ou fatura",
     ) as HTMLInputElement;
     expect(quickFileInput.accept).toContain("image/*");
     expect(quickFileInput.accept).toContain("application/pdf");
@@ -1526,6 +1527,9 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
     expect(dialogEl.className).toContain("record-dialog");
 
     const dialog = within(dialogEl);
+    expect(dialog.getByRole("combobox", { name: "Conta ou cartão de destino" })).toBeTruthy();
+    await user.click(dialog.getByRole("button", { name: /Abrir explorador \/ Galeria/i }));
+    expect(clickSpy).toHaveBeenCalledOnce();
     await user.click(
       dialog.getByRole("button", { name: /Carregar exemplo de teste/i }),
     );
@@ -1534,6 +1538,10 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
     expect(
       dialog.getByText(/1 possível duplicata manual desmarcada/i),
     ).toBeTruthy();
+    await user.click(dialog.getByRole("button", { name: "Duplicados (1)" }));
+    const preview = within(dialog.getByRole("region", { name: "Prévia dos lançamentos para importação" }));
+    expect(preview.getAllByRole("checkbox", { name: /^Selecionar / })).toHaveLength(1);
+    await user.click(dialog.getByRole("button", { name: /^Todos \(/ }));
 
     // Verifica que as listas suspensas da prévia usam o SelectControl padrão (role="combobox"), abrem para baixo sem cortar e que clicar fora não fecha o modal
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
@@ -1557,6 +1565,8 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
     const listbox = dialog.getByRole("listbox", {
       name: /Categoria de IFOOD \*IFOOD/i,
     });
+    expect(within(listbox).getByRole("option", { name: "Mercado" })).toBeTruthy();
+    expect(within(listbox).getByRole("option", { name: "Cabeleireiro" })).toBeTruthy();
     expect(listbox.style.top).toBe("calc(100% + 8px)");
     expect(listbox.style.bottom).toBe("auto");
     await user.keyboard("{Escape}");
@@ -1574,5 +1584,90 @@ describe("fase 2.3.2 — cofrinho 1 a 500 e aluguel de imóvel", () => {
     expect(
       screen.getByText(/5 lançamentos importados com sucesso!/i),
     ).toBeTruthy();
+  });
+
+  it("filtra vários meses e edita ou exclui lançamentos selecionados em lote", async () => {
+    render(<FinanceApp demo />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Lançamentos" })[0]);
+    fireEvent.change(screen.getByRole("textbox", { name: "Buscar lançamentos" }), { target: { value: "Supermercado" } });
+    const checkboxes = () => screen.getAllByRole("checkbox", { name: /^Selecionar lançamento / });
+    const initialCount = checkboxes().length;
+    fireEvent.click(screen.getByText("Meses (1)"));
+    const previousMonth = addMonths(`${today().slice(0, 7)}-01`, -1).slice(0, 7);
+    fireEvent.click(screen.getByRole("checkbox", { name: monthLabel(previousMonth) }));
+    expect(screen.getByText("Meses (2)")).toBeTruthy();
+    expect(checkboxes().length).toBeGreaterThan(initialCount);
+
+    const [first, second] = screen.getAllByRole("checkbox", { name: "Selecionar lançamento Supermercado" });
+    fireEvent.click(first);
+    fireEvent.click(second);
+    fireEvent.click(screen.getByRole("button", { name: "Editar selecionados" }));
+    fireEvent.change(screen.getByLabelText("Nova descrição"), { target: { value: "Supermercado em lote" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Nova categoria" }), { target: { value: "Mercado" } });
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar alterações" }));
+    const edited = await screen.findAllByRole("checkbox", { name: "Selecionar lançamento Supermercado em lote" });
+    expect(edited).toHaveLength(2);
+    edited.forEach((checkbox) => fireEvent.click(checkbox));
+    fireEvent.click(screen.getByRole("button", { name: "Excluir selecionados" }));
+    const confirmation = screen.getByRole("dialog", { name: "Excluir 2 lançamentos selecionados?" });
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Excluir" }));
+    await waitFor(() => expect(screen.queryByRole("checkbox", { name: "Selecionar lançamento Supermercado em lote" })).toBeNull());
+  });
+
+  it("filtra lançamentos por datas exatas, incluindo os dois limites", () => {
+    const previousMonth = addMonths(`${today().slice(0, 7)}-01`, -1).slice(0, 7);
+    const date = demoData().transactions.find((entry) =>
+      entry.description === "Supermercado" && entry.date.startsWith(previousMonth),
+    )!.date;
+    render(<FinanceApp demo />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Lançamentos" })[0]);
+    fireEvent.change(screen.getByRole("textbox", { name: "Buscar lançamentos" }), { target: { value: "Supermercado" } });
+    fireEvent.click(screen.getByText("Meses (1)"));
+    fireEvent.click(screen.getByRole("button", { name: "Intervalo de datas" }));
+    const start = screen.getByRole("textbox", { name: "Data inicial" });
+    const end = screen.getByRole("textbox", { name: "Data final" });
+    fireEvent.change(start, { target: { value: formatDate(date) } });
+    fireEvent.change(end, { target: { value: formatDate(`${previousMonth}-01`) } });
+    const apply = screen.getByRole("button", { name: "Aplicar intervalo" });
+    expect(apply).toHaveProperty("disabled", true);
+    expect(screen.getByText("A data final deve ser igual ou posterior à inicial.")).toBeTruthy();
+    fireEvent.change(end, { target: { value: formatDate(date) } });
+    fireEvent.click(apply);
+    const selection = screen.getByRole("checkbox", { name: "Selecionar lançamento Supermercado" });
+    expect(selection.closest(".entry-row")?.textContent).toContain(formatDate(date));
+    expect(screen.getByText(`${formatDate(date)} a ${formatDate(date)}`)).toBeTruthy();
+  });
+
+  it("mostra os limites de arquivo somente enquanto não há anexo", async () => {
+    render(<StatementImportModal data={demoData()} onClose={vi.fn()} onSubmit={vi.fn()} />);
+    const limits = /OFX, QFX, CSV, TSV e TXT até 5 MB/;
+    expect(screen.getByText(limits)).toBeTruthy();
+    const content = `Data;Descrição;Valor\n${today()};Compra teste;-10,00`;
+    const file = new File([content], "extrato-teste.csv", { type: "text/csv" });
+    Object.defineProperty(file, "arrayBuffer", {
+      value: async () => new TextEncoder().encode(content).buffer,
+    });
+    fireEvent.change(screen.getByLabelText("Selecionar arquivo de extrato ou fatura"), { target: { files: [file] } });
+    expect(await screen.findByText("Arquivo carregado: extrato-teste.csv")).toBeTruthy();
+    expect(screen.queryByText(limits)).toBeNull();
+  });
+
+  it("filtra candidatos a transferência separadamente das duplicatas na prévia", async () => {
+    const data = demoData();
+    render(<StatementImportModal data={data} onClose={vi.fn()} onSubmit={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /Colar texto/i }));
+    const text = [
+      "Data;Descrição;Valor;Identificador",
+      `${today()};PIX TRANSF Conta própria;-10,00;identidade-a`,
+      `${today()};Compra teste;-20,00;identidade-b`,
+      `${today()};Compra teste;-20,00;identidade-b`,
+    ].join("\n");
+    fireEvent.change(screen.getByLabelText("Texto do extrato ou fatura"), { target: { value: text } });
+    fireEvent.click(await screen.findByRole("button", { name: "Conferir transferências (1)" }));
+    expect(screen.getByRole("checkbox", { name: "Transferência entre minhas contas" })).toBeTruthy();
+    expect(screen.queryByRole("checkbox", { name: "Selecionar Compra teste" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Duplicados (1)" }));
+    expect(screen.getByRole("checkbox", { name: "Selecionar Compra teste" })).toHaveProperty("checked", false);
+    expect(screen.queryByRole("checkbox", { name: "Transferência entre minhas contas" })).toBeNull();
   });
 });

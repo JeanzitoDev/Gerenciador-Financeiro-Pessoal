@@ -1,6 +1,85 @@
 "use client";
-import { useId } from "react";
+import { useId, useState } from "react";
+import { monthLabel } from "@/lib/finance/dates";
 import { formatMoney } from "@/lib/finance/money";
+
+const cashFlowScale = new Intl.NumberFormat("pt-BR", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+export function MonthlyCashFlowChart({
+  periods,
+  hideValues = false,
+}: {
+  periods: { key: string; label: string; income: number; expense: number; result: number }[];
+  hideValues?: boolean;
+}) {
+  const [selectedMonth, setSelectedMonth] = useState<string>();
+  const selected = periods.find((period) => period.key === selectedMonth) ?? periods.at(-1);
+  if (!selected) return null;
+
+  const maximum = Math.max(100, ...periods.flatMap(({ income, expense }) => [income, expense]));
+  const ticks = [maximum, maximum / 2, 0];
+  const value = (cents: number) => hideValues ? "R$ •••••" : formatMoney(cents);
+  const height = (cents: number) => `${(cents / maximum) * 100}%`;
+
+  return (
+    <div className="cash-flow-chart">
+      <div className="cash-flow-summary" aria-live="polite" aria-atomic="true">
+        <p>{monthLabel(selected.key)}</p>
+        <dl>
+          <div>
+            <dt><i className="dot green" aria-hidden="true" />Receitas</dt>
+            <dd>{value(selected.income)}</dd>
+          </div>
+          <div>
+            <dt><i className="dot red" aria-hidden="true" />Despesas</dt>
+            <dd>{value(selected.expense)}</dd>
+          </div>
+          <div>
+            <dt>Resultado</dt>
+            <dd className={hideValues || selected.result === 0 ? undefined : selected.result > 0 ? "positive" : "negative"}>
+              {value(selected.result)}
+            </dd>
+          </div>
+        </dl>
+      </div>
+      <div className="cash-flow-plot">
+        <div className="cash-flow-scale" aria-hidden="true">
+          {ticks.map((tick) => <span key={tick}>{hideValues ? "—" : cashFlowScale.format(tick / 100)}</span>)}
+        </div>
+        <div
+          className="cash-flow-months"
+          role="group"
+          aria-label="Selecionar mês no gráfico"
+          style={{ gridTemplateColumns: `repeat(${periods.length}, minmax(0, 1fr))` }}
+        >
+          <div className="cash-flow-gridlines" aria-hidden="true">
+            {ticks.map((tick) => <span key={tick} />)}
+          </div>
+          {periods.map((period) => (
+            <button
+              className="cash-flow-month"
+              key={period.key}
+              type="button"
+              aria-label={monthLabel(period.key)}
+              aria-pressed={selected.key === period.key}
+              onClick={() => setSelectedMonth(period.key)}
+            >
+              <span className="cash-flow-bars" aria-hidden="true">
+                <span className="cash-flow-income" style={{ height: height(period.income) }} />
+                <span className="cash-flow-expense" style={{ height: height(period.expense) }} />
+              </span>
+              <span>{period.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function FinanceChart({
   labels,
   primary,

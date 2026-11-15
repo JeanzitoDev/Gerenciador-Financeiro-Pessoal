@@ -1,9 +1,11 @@
 "use client";
 import { useId, useState } from "react";
 import type { Entry } from "@/lib/types";
-const defaults = [
+export const DEFAULT_CATEGORIES = [
   "Salário",
   "Alimentação",
+  "Mercado",
+  "Cabeleireiro",
   "Moradia",
   "Transporte",
   "Saúde",
@@ -14,16 +16,21 @@ const defaults = [
   "Benefícios",
   "Investimentos",
   "Empréstimos e financiamentos",
+  "Fatura de cartão",
   "Outros",
 ];
 export default function CategoryInput({
   value,
   onChange,
   entries,
+  label = "Categoria",
+  required = true,
 }: {
   value: string;
   onChange: (v: string) => void;
   entries: Entry[];
+  label?: string;
+  required?: boolean;
 }) {
   const [open, setOpen] = useState(false),
     [active, setActive] = useState(0),
@@ -37,7 +44,7 @@ export default function CategoryInput({
       ...Array.from(counts)
         .sort((a, b) => b[1] - a[1])
         .map(([k]) => k),
-      ...defaults,
+      ...DEFAULT_CATEGORIES,
     ]),
   ]
     .filter(
@@ -53,10 +60,10 @@ export default function CategoryInput({
   };
   return (
     <label className="form-field">
-      <span>Categoria</span>
+      <span>{label}</span>
       <div className="category-input">
         <input
-          aria-label="Categoria"
+          aria-label={label}
           role="combobox"
           aria-autocomplete="list"
           aria-expanded={open && !!list.length}
@@ -67,7 +74,7 @@ export default function CategoryInput({
               : undefined
           }
           autoComplete="off"
-          required
+          required={required}
           maxLength={60}
           value={value}
           onChange={(e) => {

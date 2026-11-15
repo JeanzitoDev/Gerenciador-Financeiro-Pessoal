@@ -7,7 +7,7 @@ import {
   readJson,
   ApiError,
 } from "@/lib/api";
-import { schemas, isEntity, uuidSchema } from "@/lib/validation";
+import { schemas, isEntity, uuidSchema, transactionBatchIdsSchema, transactionBatchChangesSchema } from "@/lib/validation";
 import { consumeBudget } from "@/lib/budget";
 import {
   encodeCreditCardAccountForLegacyDb,
@@ -33,6 +33,28 @@ async function mutate(
       request,
       entity === "transactions" && method === "POST" ? 200_000 : 12_000,
     );
+    if (entity === "transactions" && method !== "POST" && Object.hasOwn(body, "entry_ids")) {
+      const ids = transactionBatchIdsSchema.safeParse(body.entry_ids);
+      if (!ids.success) throw new ApiError(422, "Seleção de lançamentos inválida.");
+      if (method === "PUT") {
+        const changes = transactionBatchChangesSchema.safeParse(body.changes);
+        if (!changes.success) throw new ApiError(422, changes.error.issues[0].message);
+        const { error } = await supabase.from(entity)
+          .update(obfuscateRecordPayload(entity, changes.data, user.id))
+          .eq("user_id", user.id).in("id", ids.data).neq("status", "cancelled");
+        if (error) throw databaseError(error);
+      } else {
+        const { error } = await supabase.from(entity).delete()
+          .eq("user_id", user.id).in("id", ids.data).is("recurrence_id", null);
+        if (error) throw databaseError(error);
+        // Preserve the same recurrence tombstones as individual deletion.
+        const { error: cancellationError } = await supabase.from(entity)
+          .update({ status: "cancelled" }).eq("user_id", user.id).in("id", ids.data)
+          .not("recurrence_id", "is", null).neq("status", "cancelled");
+        if (cancellationError) throw databaseError(cancellationError);
+      }
+      return json({ ok: true });
+    }
     if (
       entity === "transactions" &&
       method === "DELETE" &&
